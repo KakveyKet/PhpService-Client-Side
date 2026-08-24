@@ -1,0 +1,208 @@
+.customer-app {
+  --customer-primary: #0f766e;
+  --customer-primary-dark: #0b4f4a;
+  --customer-ink: #14252e;
+  --customer-muted: #73838d;
+  min-height: 100vh;
+  color: var(--customer-ink);
+  background: #f4f7f8;
+}
+
+.customer-header {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 30;
+  display: flex;
+  height: 78px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.15rem;
+  border-bottom: 1px solid #e6ecee;
+  background: rgba(255, 255, 255, .94);
+  backdrop-filter: blur(14px);
+}
+
+.customer-header__welcome span,
+.customer-header__welcome strong { display: block; }
+.customer-header__welcome span { margin-bottom: .12rem; color: #809099; font-size: .73rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.customer-header__welcome strong { max-width: 190px; overflow: hidden; font-size: 1.1rem; text-overflow: ellipsis; white-space: nowrap; }
+.customer-header__actions { display: flex; align-items: center; gap: .2rem; }
+.notification-button { position: relative; }
+.notification-button .p-badge { position: absolute; top: -.12rem; right: -.12rem; min-width: 1.1rem; height: 1.1rem; font-size: .65rem; }
+.customer-main { width: min(100%, 760px); min-height: 100vh; margin: 0 auto; padding: 98px 1rem 104px; }
+.customer-bottom-nav { position: fixed; inset: auto 0 0; z-index: 30; display: grid; height: 76px; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #e4e9ec; background: rgba(255, 255, 255, .96); box-shadow: 0 -8px 24px rgba(15, 23, 42, .06); backdrop-filter: blur(14px); }
+.customer-nav-item { position: relative; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: .3rem; color: #87959e; font-size: .71rem; font-weight: 700; }
+.customer-nav-item i { font-size: 1.25rem; }
+.customer-nav-item--active { color: var(--customer-primary); }
+.customer-nav-item--active::before { position: absolute; top: 0; width: 34px; height: 3px; border-radius: 0 0 5px 5px; background: var(--customer-primary); content: ''; }
+
+.customer-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.customer-section-heading span, .customer-section-heading h1, .customer-section-heading h2 { display: block; }
+.customer-section-heading > div > span { margin-bottom: .2rem; color: var(--customer-primary); font-size: .71rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.customer-section-heading h1, .customer-section-heading h2 { margin: 0; letter-spacing: -.035em; }
+.customer-section-heading h1 { font-size: 1.65rem; }
+.customer-section-heading h2 { font-size: 1.25rem; }
+.customer-section-count { color: #87959e !important; font-size: .75rem !important; text-transform: none !important; }
+
+.loan-product-scroll { display: flex; overflow-x: auto; gap: .85rem; margin: 0 -1rem 1.2rem; padding: 0 1rem .6rem; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.loan-product-scroll::-webkit-scrollbar { display: none; }
+.loan-product-card { position: relative; flex: 0 0 260px; min-height: 172px; overflow: hidden; padding: 1rem; border: 0; border-radius: 24px; color: white; text-align: left; scroll-snap-align: start; cursor: pointer; box-shadow: 0 15px 30px rgba(15, 23, 42, .12); transition: transform .18s ease, box-shadow .18s ease; }
+.loan-product-card:hover { transform: translateY(-2px); }
+.loan-product-card::after { position: absolute; right: -35px; bottom: -60px; width: 145px; height: 145px; border: 1px solid rgba(255,255,255,.2); border-radius: 50%; content: ''; }
+.loan-product-card--personal { background: linear-gradient(135deg, #0f766e, #0b4f4a); }
+.loan-product-card--business { background: linear-gradient(135deg, #2452a5, #182f67); }
+.loan-product-card--ofw { background: linear-gradient(135deg, #a45b16, #713b0b); }
+.loan-product-card--selected { box-shadow: 0 0 0 3px #fff, 0 0 0 5px #5eead4, 0 16px 34px rgba(15, 118, 110, .18); }
+.loan-product-card__top { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; }
+.loan-product-card__icon { display: grid; width: 40px; height: 40px; place-items: center; border-radius: 13px; background: rgba(255, 255, 255, .18); backdrop-filter: blur(6px); }
+.loan-product-card > span, .loan-product-card > strong, .loan-product-card > small { position: relative; z-index: 1; display: block; }
+.loan-product-card > span { color: rgba(255,255,255,.75); font-size: .7rem; font-weight: 700; text-transform: uppercase; }
+.loan-product-card > strong { margin: .25rem 0 .35rem; font-size: 1.3rem; }
+.loan-product-card > small { color: rgba(255,255,255,.82); }
+
+.loan-calculator-card, .profile-details-card, .customer-recent-section, .wallet-transactions-section {
+  margin-top: 1.1rem;
+  padding: 1.15rem;
+  border: 1px solid #e4eaed;
+  border-radius: 24px;
+  background: white;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .035);
+}
+.loan-calculator-card { scroll-margin-top: 94px; }
+.loan-calculator-card__header { display: flex; align-items: center; gap: .75rem; margin-bottom: 1.25rem; }
+.calculator-icon { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 14px; color: #0f766e; background: #ccfbf1; }
+.loan-calculator-card__header span, .loan-calculator-card__header h2 { display: block; }
+.loan-calculator-card__header span { color: #84939c; font-size: .7rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.loan-calculator-card__header h2 { margin: .1rem 0 0; font-size: 1.15rem; }
+.calculator-field { margin-bottom: 1.25rem; }
+.calculator-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5rem; }
+.calculator-label label { color: #52636d; font-size: .82rem; font-weight: 700; }
+.calculator-label span { color: var(--customer-primary); font-weight: 800; }
+.calculator-limits { display: flex; justify-content: space-between; margin-top: .38rem; color: #94a0a7; font-size: .68rem; }
+.month-selector { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; }
+.month-selector button { padding: .68rem .2rem; border: 1px solid #dce4e8; border-radius: 12px; color: #62747e; background: #fff; font-weight: 800; cursor: pointer; }
+.month-selector button:disabled { opacity: .35; cursor: not-allowed; }
+.month-selector .month-selector__active { border-color: var(--customer-primary); color: white; background: var(--customer-primary); }
+.calculator-summary { display: grid; grid-template-columns: 1fr 1fr; gap: .65rem; margin-bottom: 1rem; padding: .85rem; border-radius: 16px; background: #f5f8f9; }
+.calculator-summary div { min-width: 0; }
+.calculator-summary span, .calculator-summary strong { display: block; }
+.calculator-summary span { color: #7a8992; font-size: .7rem; }
+.calculator-summary strong { margin-top: .15rem; font-size: .9rem; }
+.calculator-summary__total { grid-column: 1 / -1; padding-top: .65rem; border-top: 1px dashed #cfdbdf; }
+.calculator-summary__total strong { color: var(--customer-primary); font-size: 1.1rem; }
+.loan-terms-box { display: flex; align-items: flex-start; gap: .7rem; margin: 1rem 0; padding: .9rem; border: 1px solid #dce9e7; border-radius: 16px; background: #f5fbfa; cursor: pointer; }
+.loan-terms-box > span, .loan-terms-box strong, .loan-terms-box small { display: block; }
+.loan-terms-box strong { color: #284b48; font-size: .81rem; }
+.loan-terms-box small { margin-top: .25rem; color: #6f817f; font-size: .7rem; line-height: 1.45; }
+
+.customer-recent-section, .wallet-transactions-section { padding-bottom: .45rem; }
+.customer-application-list, .wallet-transaction-list, .notification-list { display: flex; flex-direction: column; }
+.customer-application-item, .wallet-transaction-item { display: flex; align-items: center; gap: .75rem; padding: .85rem 0; border-bottom: 1px solid #edf1f3; }
+.customer-application-item:last-child, .wallet-transaction-item:last-child { border-bottom: 0; }
+.customer-application-item__icon, .wallet-transaction-item__icon { display: grid; flex: 0 0 auto; width: 40px; height: 40px; place-items: center; border-radius: 13px; color: #2563eb; background: #dbeafe; }
+.customer-application-item > div:nth-child(2), .wallet-transaction-item > div:nth-child(2) { min-width: 0; flex: 1; }
+.customer-application-item strong, .customer-application-item span, .wallet-transaction-item strong, .wallet-transaction-item span { display: block; }
+.customer-application-item > div:nth-child(2) strong, .wallet-transaction-item > div:nth-child(2) strong { overflow: hidden; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
+.customer-application-item > div:nth-child(2) span, .wallet-transaction-item > div:nth-child(2) span { margin-top: .15rem; color: #8a98a0; font-size: .68rem; }
+.customer-application-item__status { text-align: right; }
+.customer-application-item__status > strong { margin-bottom: .2rem; font-size: .78rem; }
+.customer-application-item__status .p-tag { font-size: .6rem; }
+
+.wallet-loan-picker { margin-bottom: .8rem; }
+.wallet-loan-picker label { display: block; margin-bottom: .4rem; color: #63747d; font-size: .75rem; font-weight: 700; }
+.wallet-balance-card { position: relative; overflow: hidden; padding: 1.25rem; border-radius: 28px; color: #fff; background: linear-gradient(140deg, #0f766e 0%, #08443f 75%); box-shadow: 0 18px 35px rgba(15, 118, 110, .22); }
+.wallet-balance-card::after { position: absolute; top: -80px; right: -80px; width: 210px; height: 210px; border: 1px solid rgba(255,255,255,.14); border-radius: 50%; content: ''; }
+.wallet-balance-card__top, .wallet-balance-card__meta { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.wallet-balance-card__top span, .wallet-balance-card__top strong, .wallet-balance-card__meta span, .wallet-balance-card__meta strong { display: block; }
+.wallet-balance-card__top span, .wallet-balance-card__meta span { color: #b9e7df; font-size: .7rem; }
+.wallet-balance-card__top strong { margin-top: .25rem; font-size: 1.85rem; letter-spacing: -.04em; }
+.wallet-chip { display: grid; width: 44px; height: 44px; place-items: center; border-radius: 15px; background: rgba(255,255,255,.14); }
+.wallet-balance-card__meta { align-items: flex-end; margin-top: 1.35rem; }
+.wallet-balance-card__meta strong { margin-top: .15rem; font-size: .8rem; letter-spacing: .03em; }
+.wallet-progress { position: relative; z-index: 1; margin-top: 1.1rem; }
+.wallet-progress > div { display: flex; justify-content: space-between; margin-bottom: .35rem; color: #d2f2ed; font-size: .7rem; }
+.wallet-progress .p-progressbar { height: 7px; background: rgba(255,255,255,.18); }
+.wallet-progress .p-progressbar-value { background: #99f6e4; }
+.wallet-quick-grid, .profile-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin-top: .85rem; }
+.wallet-quick-grid article, .profile-stat-grid article { min-width: 0; padding: .9rem; border: 1px solid #e4eaed; border-radius: 18px; background: #fff; }
+.wallet-quick-grid i { display: block; margin-bottom: .65rem; color: var(--customer-primary); }
+.wallet-quick-grid span, .wallet-quick-grid strong, .wallet-quick-grid small, .profile-stat-grid span, .profile-stat-grid strong { display: block; }
+.wallet-quick-grid span, .profile-stat-grid span { color: #829099; font-size: .68rem; }
+.wallet-quick-grid strong, .profile-stat-grid strong { margin-top: .2rem; font-size: .92rem; }
+.wallet-quick-grid small { margin-top: .15rem; color: #86949c; }
+.wallet-transaction-item__icon--payment { color: #0f766e; background: #ccfbf1; }
+.wallet-transaction-item > strong { font-size: .82rem; }
+.amount-paid { color: #0f766e; }
+
+.profile-identity-card { display: flex; align-items: center; gap: 1rem; padding: 1.1rem; border-radius: 24px; color: white; background: linear-gradient(135deg, #0f766e, #0b4f4a); }
+.profile-avatar { display: grid; flex: 0 0 auto; width: 68px; height: 68px; place-items: center; border: 2px solid rgba(255,255,255,.45); border-radius: 22px; color: #07433f; background: #99f6e4; font-size: 1.25rem; font-weight: 900; }
+.profile-identity-card h2 { margin: 0 0 .2rem; font-size: 1.15rem; }
+.profile-identity-card span { display: block; margin-bottom: .35rem; color: #bdebe4; font-size: .75rem; }
+.profile-stat-grid article { text-align: center; }
+.profile-stat-grid strong { color: var(--customer-primary); font-size: 1.3rem; }
+.profile-card-heading { display: flex; align-items: center; gap: .65rem; margin-bottom: .45rem; padding-bottom: .75rem; border-bottom: 1px solid #ebeff1; }
+.profile-card-heading i { color: var(--customer-primary); }
+.profile-card-heading h3 { margin: 0; font-size: .95rem; }
+.profile-detail-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: .75rem 0; border-bottom: 1px solid #f0f3f4; }
+.profile-detail-row:last-child { border-bottom: 0; }
+.profile-detail-row span { color: #829099; font-size: .75rem; }
+.profile-detail-row strong { max-width: 60%; font-size: .78rem; text-align: right; overflow-wrap: anywhere; }
+.profile-address { margin: .8rem 0 .2rem; color: #5e7079; font-size: .8rem; line-height: 1.6; }
+
+.customer-empty { display: flex; align-items: center; flex-direction: column; padding: 2rem 1rem; color: #87959d; text-align: center; }
+.customer-empty i { margin-bottom: .65rem; color: #9babb2; font-size: 1.7rem; }
+.customer-empty strong, .customer-empty span { display: block; }
+.customer-empty strong { color: #52646d; font-size: .9rem; }
+.customer-empty span { margin-top: .3rem; max-width: 300px; font-size: .75rem; line-height: 1.5; }
+.customer-empty--card { padding: 1.5rem .5rem; }
+.customer-empty--large { min-height: 50vh; justify-content: center; }
+.customer-empty--large a { margin-top: 1rem; color: var(--customer-primary); font-size: .8rem; font-weight: 800; }
+
+.notification-drawer__toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: .5rem; color: #839099; font-size: .75rem; }
+.notification-item { display: flex; gap: .75rem; padding: .85rem .25rem; border-bottom: 1px solid #edf1f3; }
+.notification-item--unread { margin: 0 -.5rem; padding-right: .75rem; padding-left: .75rem; border-radius: 14px; background: #f0fdfa; }
+.notification-item__icon { display: grid; flex: 0 0 auto; width: 38px; height: 38px; place-items: center; border-radius: 12px; color: var(--customer-primary); background: #ccfbf1; }
+.notification-item__title { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.notification-item__title strong { font-size: .8rem; }
+.notification-item__title .p-tag { font-size: .58rem; }
+.notification-item p { margin: .25rem 0; color: #677982; font-size: .75rem; line-height: 1.45; }
+.notification-item small { color: #95a2a9; font-size: .65rem; }
+
+.customer-auth-page, .customer-register-page { min-height: 100vh; background: #f4f7f8; }
+.customer-auth-hero { position: relative; min-height: 42vh; overflow: hidden; padding: 2rem 1.35rem 4.5rem; color: white; background: radial-gradient(circle at 95% 5%, #34d399 0, transparent 35%), linear-gradient(145deg, #0f766e, #073f3b); }
+.customer-auth-hero::after { position: absolute; right: -80px; bottom: -120px; width: 270px; height: 270px; border: 1px solid rgba(255,255,255,.17); border-radius: 50%; content: ''; }
+.customer-auth-logo { display: grid; width: 44px; height: 44px; margin-bottom: .8rem; place-items: center; border-radius: 14px; color: #07443f; background: #99f6e4; }
+.customer-auth-hero > span { color: #bdece4; font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.customer-auth-hero h1 { margin: .65rem 0; font-size: 2.2rem; line-height: 1.06; letter-spacing: -.05em; }
+.customer-auth-hero p { max-width: 420px; margin: 0; color: #c9eee8; font-size: .85rem; line-height: 1.6; }
+.customer-auth-card { position: relative; z-index: 2; width: calc(100% - 2rem); max-width: 520px; margin: -2.6rem auto 0; padding: 1.25rem; border: 1px solid #e5ebed; border-radius: 26px; background: #fff; box-shadow: 0 18px 40px rgba(15,23,42,.1); }
+.customer-auth-card__heading h2 { margin: 0; font-size: 1.35rem; }
+.customer-auth-card__heading p { margin: .25rem 0 1.2rem; color: #7e8d95; font-size: .8rem; }
+.customer-auth-switch { margin-top: 1.1rem; color: #77878f; font-size: .78rem; text-align: center; }
+.customer-auth-switch a, .staff-login-link { color: var(--customer-primary, #0f766e); font-weight: 800; }
+.staff-login-link { display: block; margin-top: .9rem; font-size: .72rem; text-align: center; }
+.customer-register-header { display: flex; align-items: center; gap: .9rem; padding: 1.1rem; color: white; background: linear-gradient(135deg, #0f766e, #0b4f4a); }
+.customer-register-header > a { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 12px; background: rgba(255,255,255,.14); }
+.customer-register-header span, .customer-register-header strong { display: block; }
+.customer-register-header span { color: #bdebe4; font-size: .68rem; font-weight: 700; text-transform: uppercase; }
+.customer-register-header strong { margin-top: .1rem; }
+.customer-register-card { width: min(100% - 2rem, 620px); margin: 1rem auto; padding: 1.15rem; border: 1px solid #e4eaed; border-radius: 24px; background: white; }
+.customer-form-section { margin-bottom: 1.3rem; }
+.customer-form-section > span { display: block; margin-bottom: .75rem; color: var(--customer-primary, #0f766e); font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.customer-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .85rem; }
+.customer-form-full { grid-column: 1 / -1; }
+
+@media (min-width: 761px) {
+  .customer-app { background: #edf2f3; }
+  .customer-header, .customer-bottom-nav { right: 50%; left: 50%; width: 760px; transform: translateX(-50%); }
+  .customer-main { background: #f7f9fa; box-shadow: 0 0 50px rgba(15, 23, 42, .07); }
+}
+
+@media (max-width: 460px) {
+  .customer-main { padding-right: .85rem; padding-left: .85rem; }
+  .loan-product-scroll { margin-right: -.85rem; margin-left: -.85rem; padding-right: .85rem; padding-left: .85rem; }
+  .loan-product-card { flex-basis: 238px; }
+  .customer-form-grid { grid-template-columns: 1fr; }
+  .customer-form-full { grid-column: auto; }
+  .wallet-balance-card__top strong { font-size: 1.55rem; }
+}
