@@ -11,6 +11,7 @@ import { apiError } from "../utils/formatters.js";
 const auth = useAuthStore();
 const route = useRoute();
 const router = useRouter();
+
 const errorMessage = ref("");
 
 const form = reactive({
@@ -25,9 +26,11 @@ async function submit() {
     await auth.login(form);
 
     const redirect =
-      typeof route.query.redirect === "string" ? route.query.redirect : "/";
+      typeof route.query.redirect === "string"
+        ? route.query.redirect
+        : "/";
 
-    router.push(redirect);
+    await router.push(redirect);
   } catch (error) {
     errorMessage.value = apiError(error);
   }
@@ -35,29 +38,41 @@ async function submit() {
 </script>
 
 <template>
-  <main class="flex min-h-dvh items-center justify-center bg-white px-4 py-10">
+  <main
+    class="flex min-h-dvh items-center justify-center bg-slate-50 px-4 py-10"
+  >
     <section class="w-full max-w-sm">
-      <div class="text-center">
+      <header class="text-center">
         <div
-          class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white"
+          class="mx-auto h-20 w-20 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1 shadow-sm"
         >
-          <i class="pi pi-chart-line text-lg" />
+          <img
+            src="https://res.cloudinary.com/dvljcimlz/image/upload/v1787582112/photo_2026-08-24_21-33-46_wupszz.jpg"
+            alt="Loan Filipinas Service logo"
+            class="h-full w-full rounded-xl object-cover"
+          />
         </div>
 
-        <span class="mt-3 block text-sm font-semibold text-emerald-700">
-          Microfinance MS
+        <span
+          class="mt-4 block text-sm font-bold uppercase tracking-wide text-emerald-700"
+        >
+          Loan Filipinas Service
         </span>
 
-        <h1 class="mt-4 text-2xl font-bold text-slate-900">Welcome Back</h1>
-
-        <!-- <p class="mt-1 text-sm text-slate-500">Sign in to manage the system.</p> -->
-      </div>
+        <h1 class="mt-3 text-2xl font-bold text-slate-900">
+          Welcome Back
+        </h1>
+      </header>
 
       <form
         class="mt-7 space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
         @submit.prevent="submit"
       >
-        <Message v-if="errorMessage" severity="error" :closable="false">
+        <Message
+          v-if="errorMessage"
+          severity="error"
+          :closable="false"
+        >
           {{ errorMessage }}
         </Message>
 
