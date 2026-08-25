@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, reactive, ref } from "vue";
-
 import { useToast } from "primevue/usetoast";
+
 import Button from "primevue/button";
 import Column from "primevue/column";
 import DataTable from "primevue/datatable";
@@ -14,7 +14,6 @@ import Tag from "primevue/tag";
 import PageHeader from "../components/PageHeader.vue";
 import api from "../services/api.js";
 import { useAuthStore } from "../stores/auth.js";
-
 import { apiError, dateTime, statusSeverity } from "../utils/formatters.js";
 
 const auth = useAuthStore();
@@ -43,22 +42,66 @@ const roleOptions = [
 
 const statusOptions = ["ACTIVE", "INACTIVE", "LOCKED"];
 
-const emptyForm = () => ({
-  username: "",
-  email: "",
-  phone: "",
-  password: "",
-  displayName: "",
-  role: "USER",
-  status: "ACTIVE",
-});
+function emptyForm() {
+  return {
+    username: "",
+    email: "",
+    phone: "",
+    password: "",
+    displayName: "",
+    role: "USER",
+    status: "ACTIVE",
+  };
+}
 
 const form = reactive(emptyForm());
+
+function cleanText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
 
 function roleLabel(role) {
   return (
     roleOptions.find((option) => option.value === role)?.label || role || "—"
   );
+}
+
+function detailedApiError(error) {
+  const data = error.response?.data;
+
+  if (Array.isArray(data?.errors)) {
+    const messages = data.errors
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+
+        return item.message || item.msg || item.error;
+      })
+      .filter(Boolean);
+
+    if (messages.length) {
+      return messages.join(", ");
+    }
+  }
+
+  if (data?.errors && typeof data.errors === "object") {
+    const messages = Object.values(data.errors)
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+
+        return item?.message || item?.msg;
+      })
+      .filter(Boolean);
+
+    if (messages.length) {
+      return messages.join(", ");
+    }
+  }
+
+  return data?.message || apiError(error);
 }
 
 async function load() {
@@ -71,12 +114,16 @@ async function load() {
       },
     });
 
-    items.value = response.data.items;
+    items.value = Array.isArray(response.data?.items)
+      ? response.data.items
+      : [];
   } catch (error) {
+    console.error("Load users failed:", error.response?.data);
+
     toast.add({
       severity: "error",
       summary: "Cannot load users",
-      detail: apiError(error),
+      detail: detailedApiError(error),
       life: 4000,
     });
   } finally {
@@ -91,16 +138,16 @@ function openCreate() {
 }
 
 function openEdit(item) {
-  editingId.value = item._id;
+  editingId.value = item._id || item.id;
 
   Object.assign(form, {
-    username: item.username,
+    username: item.username || "",
     email: item.email || "",
     phone: item.phone || "",
     password: "",
-    displayName: item.displayName,
-    role: item.roleId?.name,
-    status: item.status,
+    displayName: item.displayName || "",
+    role: item.roleId?.name || item.role || "USER",
+    status: item.status || "ACTIVE",
   });
 
   dialogVisible.value = true;
@@ -113,25 +160,50 @@ function closeDialog() {
 }
 
 function buildCreatePayload() {
-  return {
-    username: form.username,
-    email: form.email,
-    phone: form.phone,
+  const payload = {
+    username: cleanText(form.username),
+    displayName: cleanText(form.displayName),
     password: form.password,
-    displayName: form.displayName,
     role: form.role,
   };
+
+  const email = cleanText(form.email).toLowerCase();
+
+  const phone = cleanText(form.phone);
+
+  // Do not send optional fields as empty strings.
+  if (email) {
+    payload.email = email;
+  }
+
+  if (phone) {
+    payload.phone = phone;
+  }
+
+  return payload;
 }
 
 function buildUpdatePayload() {
   const payload = {
-    username: form.username,
-    email: form.email,
-    phone: form.phone,
-    displayName: form.displayName,
+    username: cleanText(form.username),
+    displayName: cleanText(form.displayName),
     role: form.role,
     status: form.status,
   };
+
+  const email = cleanText(form.email).toLowerCase();
+
+  const phone = cleanText(form.phone);
+
+  // Empty optional values are omitted to avoid
+  // backend validation errors.
+  if (email) {
+    payload.email = email;
+  }
+
+  if (phone) {
+    payload.phone = phone;
+  }
 
   if (form.password) {
     payload.password = form.password;
@@ -140,41 +212,122 @@ function buildUpdatePayload() {
   return payload;
 }
 
+function validateForm() {
+  const displayName = cleanText(form.displayName);
+
+  const username = cleanText(form.username);
+
+  if (!displayName) {
+    toast.add({
+      severity: "warn",
+      summary: "Display name required",
+      detail: "Please enter the user's display name.",
+      life: 3500,
+    });
+
+    return false;
+  }
+
+  if (!username) {
+    toast.add({
+      severity: "warn",
+      summary: "Username required",
+      detail: "Please enter a username.",
+      life: 3500,
+    });
+
+    return false;
+  }
+
+  if (username.length < 3) {
+    toast.add({
+      severity: "warn",
+      summary: "Invalid username",
+      detail: "Username must contain at least 3 characters.",
+      life: 3500,
+    });
+
+    return false;
+  }
+
+  if (!form.role) {
+    toast.add({
+      severity: "warn",
+      summary: "Role required",
+      detail: "Please select a system role.",
+      life: 3500,
+    });
+
+    return false;
+  }
+
+  if (!editingId.value && !form.password) {
+    toast.add({
+      severity: "warn",
+      summary: "Password required",
+      detail: "Please enter a password.",
+      life: 3500,
+    });
+
+    return false;
+  }
+
+  if (form.password && form.password.length < 8) {
+    toast.add({
+      severity: "warn",
+      summary: "Invalid password",
+      detail: "Password must contain at least 8 characters.",
+      life: 4000,
+    });
+
+    return false;
+  }
+
+  return true;
+}
+
 async function save() {
+  if (!validateForm()) {
+    return;
+  }
+
   saving.value = true;
 
+  const isEditing = Boolean(editingId.value);
+
   try {
-    if (editingId.value) {
+    if (isEditing) {
       const payload = buildUpdatePayload();
 
       await api.patch(`/users/${editingId.value}`, payload);
 
-      /*
-       * Refresh the current session if
-       * the super admin edited their own
-       * account.
-       */
-      if (editingId.value === auth.user?.id) {
+      const currentUserId = auth.user?.id || auth.user?._id;
+
+      if (String(editingId.value) === String(currentUserId)) {
         await auth.fetchMe();
       }
     } else {
-      await api.post("/users", buildCreatePayload());
+      const payload = buildCreatePayload();
+
+      await api.post("/users", payload);
     }
 
     toast.add({
       severity: "success",
-      summary: editingId.value ? "User updated" : "User created",
+      summary: isEditing ? "User updated" : "User created",
       life: 2500,
     });
 
     closeDialog();
     await load();
   } catch (error) {
+    console.error("Save user failed:", error.response?.data);
+
     toast.add({
       severity: "error",
       summary: "Save failed",
-      detail: apiError(error),
-      life: 4000,
+      detail: detailedApiError(error),
+      life: 5000,
     });
   } finally {
     saving.value = false;
@@ -227,7 +380,10 @@ onMounted(load);
 
         <Column header="Role">
           <template #body="{ data }">
-            <Tag :value="roleLabel(data.roleId?.name)" severity="info" />
+            <Tag
+              :value="roleLabel(data.roleId?.name || data.role)"
+              severity="info"
+            />
           </template>
         </Column>
 
@@ -271,46 +427,75 @@ onMounted(load);
       <form @submit.prevent="save">
         <div class="form-grid">
           <div class="form-field form-field--full">
-            <label> Display name * </label>
+            <label for="displayName"> Display name * </label>
 
-            <InputText v-model.trim="form.displayName" required />
+            <InputText
+              id="displayName"
+              v-model.trim="form.displayName"
+              autocomplete="name"
+              required
+            />
           </div>
 
           <div class="form-field">
-            <label> Username * </label>
+            <label for="username"> Username * </label>
 
-            <InputText v-model.trim="form.username" required />
+            <InputText
+              id="username"
+              v-model.trim="form.username"
+              autocomplete="username"
+              minlength="3"
+              required
+            />
           </div>
 
           <div class="form-field">
-            <label>Email</label>
+            <label for="userEmail"> Email </label>
 
-            <InputText v-model.trim="form.email" type="email" />
+            <InputText
+              id="userEmail"
+              v-model.trim="form.email"
+              type="email"
+              autocomplete="email"
+            />
           </div>
 
           <div class="form-field">
-            <label>Phone</label>
+            <label for="userPhone"> Phone </label>
 
-            <InputText v-model.trim="form.phone" />
+            <InputText
+              id="userPhone"
+              v-model.trim="form.phone"
+              autocomplete="tel"
+              inputmode="tel"
+            />
           </div>
 
           <div class="form-field">
-            <label>Role *</label>
+            <label for="userRole"> Role * </label>
 
             <Select
+              id="userRole"
               v-model="form.role"
               :options="roleOptions"
               option-label="label"
               option-value="value"
               placeholder="Select role"
+              class="w-full"
               required
             />
           </div>
 
           <div v-if="editingId" class="form-field">
-            <label>Status *</label>
+            <label for="userStatus"> Status * </label>
 
-            <Select v-model="form.status" :options="statusOptions" required />
+            <Select
+              id="userStatus"
+              v-model="form.status"
+              :options="statusOptions"
+              class="w-full"
+              required
+            />
           </div>
 
           <div
@@ -319,16 +504,19 @@ onMounted(load);
               'form-field--full': !editingId,
             }"
           >
-            <label>
+            <label for="userPassword">
               {{ editingId ? "New password (optional)" : "Password *" }}
             </label>
 
             <Password
+              id="userPassword"
               v-model="form.password"
               toggle-mask
               fluid
               :feedback="!editingId"
               :required="!editingId"
+              minlength="8"
+              autocomplete="new-password"
             />
           </div>
         </div>
@@ -339,6 +527,7 @@ onMounted(load);
             severity="secondary"
             text
             type="button"
+            :disabled="saving"
             @click="closeDialog"
           />
 
