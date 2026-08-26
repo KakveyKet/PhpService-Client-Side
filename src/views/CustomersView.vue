@@ -270,11 +270,7 @@ async function uploadIdentityImages(customerId) {
     uploadData.append(field, identityFiles[field]);
   }
 
-  await api.post(`/customers/${customerId}/identity-images`, uploadData, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
-  });
+  await api.post(`/customers/${customerId}/identity-images`, uploadData);
 }
 
 async function save() {
@@ -330,12 +326,15 @@ async function removeCustomer() {
   deleting.value = true;
 
   try {
-    await api.delete(`/customers/${customerToDelete.value._id}`);
+    const { data } = await api.delete(
+      `/customers/${customerToDelete.value._id}`,
+    );
 
     toast.add({
       severity: "success",
-      summary: "Customer deleted",
-      life: 2500,
+      summary: "Customer permanently deleted",
+      detail: data.message,
+      life: 3500,
     });
 
     deleteDialogVisible.value = false;
@@ -933,8 +932,9 @@ onMounted(load);
             }}?
           </p>
           <p class="mt-1 text-sm leading-5 text-slate-500">
-            This action cannot be undone. Customers with applications, loans,
-            or repayments cannot be deleted.
+            This action cannot be undone. The customer login account and all
+            related applications, loans, installments, repayments, and
+            transaction records will also be permanently deleted.
           </p>
         </div>
       </div>
@@ -950,7 +950,7 @@ onMounted(load);
         />
         <Button
           type="button"
-          label="Delete customer"
+          label="Delete permanently"
           icon="pi pi-trash"
           severity="danger"
           :loading="deleting"
