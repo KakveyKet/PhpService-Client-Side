@@ -24,7 +24,13 @@ export function dateTime(value) {
 
 export function fullName(customer) {
   if (!customer) return '—';
-  return [customer.firstName, customer.middleName, customer.lastName].filter(Boolean).join(' ');
+  return (
+    customer.name ||
+    [customer.firstName, customer.middleName, customer.lastName]
+      .filter(Boolean)
+      .join(' ') ||
+    '—'
+  );
 }
 
 export function statusSeverity(status) {

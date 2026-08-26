@@ -234,32 +234,32 @@ onMounted(load);
 
       <dl class="mt-7 grid gap-x-8 gap-y-4 sm:grid-cols-2">
         <div class="contract-detail">
-          <dt>Name of the borrower</dt>
+          <dt>Customer name</dt>
           <dd>{{ contract.borrower.name }}</dd>
         </div>
         <div class="contract-detail">
-          <dt>ID Number</dt>
-          <dd>{{ contract.borrower.idNumber }}</dd>
-        </div>
-        <div class="contract-detail">
-          <dt>Mobile Number</dt>
+          <dt>Phone number</dt>
           <dd>{{ contract.borrower.mobileNumber }}</dd>
         </div>
         <div class="contract-detail">
-          <dt>Installment Payment</dt>
-          <dd>{{ currency(contract.loan.installmentPayment) }}</dd>
-        </div>
-        <div class="contract-detail">
-          <dt>Credit</dt>
+          <dt>Loan period</dt>
           <dd>{{ contract.loan.creditTerm }}</dd>
         </div>
         <div class="contract-detail">
-          <dt>Beneficiary Bank Name</dt>
-          <dd>{{ contract.template.beneficiaryBankName || '—' }}</dd>
+          <dt>Amount per installment</dt>
+          <dd>{{ currency(contract.loan.amountPerInstallment) }}</dd>
+        </div>
+        <div class="contract-detail">
+          <dt>Total amount</dt>
+          <dd>{{ currency(contract.loan.totalAmount) }}</dd>
         </div>
         <div class="contract-detail">
           <dt>Principal Amount</dt>
           <dd>{{ currency(contract.loan.principalAmount) }}</dd>
+        </div>
+        <div class="contract-detail">
+          <dt>ID card number</dt>
+          <dd>{{ contract.borrower.idNumber }}</dd>
         </div>
         <div class="contract-detail">
           <dt>Contract Period</dt>
@@ -271,17 +271,25 @@ onMounted(load);
         {{ contract.template.body }}
       </div>
 
-      <div class="mt-14 grid grid-cols-2 gap-10 text-center text-sm text-slate-700">
-        <div>
-          <div class="h-16" />
-          <div class="border-t border-slate-500 pt-2 font-semibold">Lender signature</div>
-          <p class="mt-1 text-xs text-slate-500">Loan Filipinas Service</p>
+      <div class="borrower-signature mt-14 ml-auto max-w-sm text-center text-sm text-slate-700">
+        <div class="flex h-28 items-end justify-center">
+          <img
+            v-if="contract.borrower.signatureUrl"
+            :src="contract.borrower.signatureUrl"
+            alt="Borrower signature"
+            class="max-h-24 max-w-full object-contain"
+          />
+          <span v-else class="pb-4 text-xs italic text-slate-400">
+            No application signature available
+          </span>
         </div>
-        <div>
-          <div class="h-16" />
-          <div class="border-t border-slate-500 pt-2 font-semibold">Borrower signature</div>
-          <p class="mt-1 text-xs text-slate-500">{{ contract.borrower.name }}</p>
+        <div class="border-t border-slate-500 pt-2 font-semibold">
+          Borrower signature
         </div>
+        <p class="mt-1 text-xs text-slate-500">{{ contract.borrower.name }}</p>
+        <p v-if="contract.borrower.termsAcceptedAt" class="mt-1 text-[11px] text-slate-400">
+          Terms accepted {{ date(contract.borrower.termsAcceptedAt) }}
+        </p>
       </div>
     </section>
 
