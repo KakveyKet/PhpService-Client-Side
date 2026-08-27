@@ -7,6 +7,7 @@ import Dialog from 'primevue/dialog';
 import Password from 'primevue/password';
 import api from '../../services/api.js';
 import { useAuthStore } from '../../stores/auth.js';
+import { useRealtimeRefresh } from '../../composables/useRealtimeRefresh.js';
 import { apiError, currency, date, fullName } from '../../utils/formatters.js';
 
 const auth = useAuthStore();
@@ -133,6 +134,7 @@ function logout() {
   router.push('/customer/login');
 }
 
+useRealtimeRefresh(['profile', 'customers'], load);
 onMounted(load);
 onBeforeUnmount(hideBankDetails);
 </script>

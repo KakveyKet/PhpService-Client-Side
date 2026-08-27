@@ -1,19 +1,28 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import Badge from 'primevue/badge';
 import Button from 'primevue/button';
 import Drawer from 'primevue/drawer';
 import Tag from 'primevue/tag';
 import api from '../services/api.js';
+import {
+  connectRealtime,
+  disconnectRealtime,
+  onRealtimeEvent,
+  realtimeConnectionError,
+  realtimeReady
+} from '../services/socket.js';
 import { useAuthStore } from '../stores/auth.js';
 import { dateTime } from '../utils/formatters.js';
+import { useRealtimeRefresh } from '../composables/useRealtimeRefresh.js';
 
 const auth = useAuthStore();
 const router = useRouter();
 const notificationOpen = ref(false);
 const notifications = ref([]);
 const unreadCount = ref(0);
+let removeSessionRevokedListener = null;
 
 const firstName = computed(() => auth.user?.displayName?.split(' ')[0] || 'Customer');
 const navigation = [
@@ -44,11 +53,26 @@ async function markAllRead() {
 }
 
 function logout() {
+  disconnectRealtime();
   auth.logout();
   router.push('/customer/login');
 }
 
-onMounted(loadNotifications);
+useRealtimeRefresh(['notifications'], loadNotifications);
+
+onMounted(() => {
+  connectRealtime();
+  removeSessionRevokedListener = onRealtimeEvent('session:revoked', () => {
+    auth.logout();
+    router.replace('/customer/login');
+  });
+  loadNotifications();
+});
+
+onBeforeUnmount(() => {
+  removeSessionRevokedListener?.();
+  disconnectRealtime();
+});
 </script>
 
 <template>
@@ -59,6 +83,12 @@ onMounted(loadNotifications);
         <strong>{{ firstName }}</strong>
       </div>
       <div class="customer-header__actions">
+        <span
+          class="h-2.5 w-2.5 rounded-full"
+          :class="realtimeReady ? 'bg-emerald-400' : 'bg-amber-400'"
+          :title="realtimeConnectionError || (realtimeReady ? 'Live updates connected' : 'Real-time reconnecting')"
+          aria-label="Real-time connection status"
+        />
         <div class="notification-button">
           <Button icon="pi pi-bell" rounded text severity="secondary" aria-label="Notifications" @click="openNotifications" />
           <Badge v-if="unreadCount" :value="unreadCount" severity="danger" />

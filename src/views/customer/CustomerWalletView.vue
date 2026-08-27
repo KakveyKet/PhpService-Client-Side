@@ -1,26 +1,50 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
-import { useToast } from "primevue/usetoast";
-import Select from "primevue/select";
-import Tag from "primevue/tag";
-import api from "../../services/api.js";
+import { computed, onMounted, reactive, ref, watch } from 'vue'; 
+import { useToast } from 'primevue/usetoast'; 
+import Button from 'primevue/button';
+import Dialog from 'primevue/dialog';
+import InputNumber from 'primevue/inputnumber';
+import InputText from 'primevue/inputtext';
+import Message from 'primevue/message';
+import Select from 'primevue/select'; 
+import Tag from 'primevue/tag';
+import api from '../../services/api.js';
+import { useRealtimeRefresh } from '../../composables/useRealtimeRefresh.js';
 import {
   apiError,
   currency,
   date,
   dateTime,
   numberValue,
-  statusSeverity,
-} from "../../utils/formatters.js";
+  statusSeverity
+} from '../../utils/formatters.js';
 
 const toast = useToast();
 const loans = ref([]);
 const selectedLoanId = ref(null);
 const loanDetail = ref(null);
 const installments = ref([]);
-const transactions = ref([]);
-const loading = ref(true);
-const detailLoading = ref(false);
+const transactions = ref([]); 
+const wallet = ref({
+  availableBalance: 0,
+  reservedBalance: 0,
+  withdrawnAmount: 0,
+  originalBalance: 0
+});
+const withdrawals = ref([]);
+const loading = ref(true); 
+const detailLoading = ref(false); 
+const withdrawVisible = ref(false);
+const withdrawing = ref(false);
+const otpVisible = ref(false);
+const verifyingOtp = ref(false);
+const otpWithdrawal = ref(null);
+const otpCode = ref('');
+const withdrawForm = reactive({
+  amount: null,
+  bankName: '',
+  bankAccountNumber: ''
+});
 
 const selectedLoan = computed(() => {
   return loans.value.find((loan) => loan._id === selectedLoanId.value);
@@ -28,25 +52,69 @@ const selectedLoan = computed(() => {
 
 const nextInstallment = computed(() => {
   return installments.value.find((item) => {
-    return ["PENDING", "PARTIALLY_PAID", "OVERDUE"].includes(item.status);
+    return ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'].includes(item.status);
   });
 });
 
-const paidProgress = computed(() => {
+const paidProgress = computed(() => { 
   const total = numberValue(loanDetail.value?.totalPayable);
 
   if (!total) return 0;
 
   const paid = numberValue(loanDetail.value?.balances?.totalPaid);
-  return Math.min(100, Math.round((paid / total) * 100));
+  return Math.min(100, Math.round(paid / total * 100));
+}); 
+
+const openWithdrawal = computed(() => {
+  return withdrawals.value.find((item) => {
+    return [
+      'PENDING_REVIEW',
+      'WAITING_FOR_OTP',
+      'OTP_REQUIRED',
+      'OTP_VERIFIED'
+    ].includes(item.status);
+  });
 });
 
-function isRepayment(transaction) {
-  return transaction.transactionType === "REPAYMENT";
+const availableBalance = computed(() => {
+  return numberValue(wallet.value?.availableBalance);
+});
+
+const canWithdraw = computed(() => {
+  return ['APPROVED', 'ACTIVE'].includes(loanDetail.value?.status) &&
+    availableBalance.value > 0 &&
+    !openWithdrawal.value;
+});
+
+function isRepayment(transaction) { 
+  return transaction.transactionType === 'REPAYMENT'; 
+} 
+
+function isMoneyOut(transaction) {
+  return ['REPAYMENT', 'WITHDRAWAL'].includes(transaction.transactionType);
 }
 
-function transactionLabel(transaction) {
-  return transaction.transactionType?.replaceAll("_", " ") || "Transaction";
+function transactionLabel(transaction) { 
+  return transaction.transactionType?.replaceAll('_', ' ') || 'Transaction';
+} 
+
+function withdrawalSeverity(status) {
+  const severities = {
+    PENDING_REVIEW: 'warn',
+    WAITING_FOR_OTP: 'info',
+    OTP_REQUIRED: 'info',
+    OTP_VERIFIED: 'success',
+    APPROVED: 'success',
+    COMPLETED: 'success',
+    REJECTED: 'danger',
+    EXPIRED: 'secondary',
+    CANCELLED: 'secondary'
+  };
+  return severities[status] || 'secondary';
+}
+
+function withdrawalLabel(status) {
+  return status?.replaceAll('_', ' ') || 'UNKNOWN';
 }
 
 async function loadLoanDetail(id) {
@@ -55,17 +123,22 @@ async function loadLoanDetail(id) {
   detailLoading.value = true;
 
   try {
-    const { data } = await api.get(`/loans/${id}`);
-
-    loanDetail.value = data.item;
-    installments.value = data.installments;
-    transactions.value = data.transactions;
+    const [loanResponse, withdrawalResponse] = await Promise.all([
+      api.get(`/loans/${id}`),
+      api.get('/withdrawals', { params: { loanId: id, limit: 100 } })
+    ]);
+ 
+    loanDetail.value = loanResponse.data.item; 
+    installments.value = loanResponse.data.installments; 
+    transactions.value = loanResponse.data.transactions;
+    wallet.value = loanResponse.data.wallet || wallet.value;
+    withdrawals.value = withdrawalResponse.data.items;
   } catch (error) {
     toast.add({
-      severity: "error",
-      summary: "Cannot load wallet",
+      severity: 'error',
+      summary: 'Cannot load wallet',
       detail: apiError(error),
-      life: 4000,
+      life: 4000
     });
   } finally {
     detailLoading.value = false;
@@ -76,28 +149,111 @@ async function load() {
   loading.value = true;
 
   try {
-    const { data } = await api.get("/loans", {
-      params: { limit: 100 },
+    const { data } = await api.get('/loans', {
+      params: { limit: 100 }
     });
 
     loans.value = data.items;
 
-    const preferred =
-      loans.value.find((loan) => {
-        return ["ACTIVE", "OVERDUE"].includes(loan.status);
-      }) || loans.value[0];
+    const preferred = loans.value.find((loan) => {
+      return loan._id === selectedLoanId.value;
+    }) || loans.value.find((loan) => { 
+      return ['ACTIVE', 'OVERDUE'].includes(loan.status); 
+    }) || loans.value[0];
 
     selectedLoanId.value = preferred?._id || null;
     await loadLoanDetail(selectedLoanId.value);
   } catch (error) {
     toast.add({
-      severity: "error",
-      summary: "Cannot load wallet",
+      severity: 'error',
+      summary: 'Cannot load wallet',
       detail: apiError(error),
-      life: 4000,
+      life: 4000
     });
   } finally {
     loading.value = false;
+  }
+} 
+
+function openWithdraw() {
+  Object.assign(withdrawForm, {
+    amount: null,
+    bankName: '',
+    bankAccountNumber: ''
+  });
+  withdrawVisible.value = true;
+}
+
+async function submitWithdrawal() {
+  if (!selectedLoanId.value) return;
+  withdrawing.value = true;
+
+  try {
+    await api.post('/withdrawals', {
+      loanId: selectedLoanId.value,
+      amount: withdrawForm.amount,
+      bankName: withdrawForm.bankName,
+      bankAccountNumber: withdrawForm.bankAccountNumber
+    });
+    withdrawVisible.value = false;
+    toast.add({
+      severity: 'success',
+      summary: 'Withdrawal submitted',
+      detail: 'An administrator will verify your bank information and prepare the OTP.',
+      life: 4000
+    });
+    await loadLoanDetail(selectedLoanId.value);
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: 'Withdrawal failed',
+      detail: apiError(error),
+      life: 4500
+    });
+  } finally {
+    withdrawing.value = false;
+  }
+}
+
+function openOtp(item) {
+  otpWithdrawal.value = item;
+  otpCode.value = '';
+  otpVisible.value = true;
+}
+
+function updateOtp(event) {
+  const maximumLength = otpWithdrawal.value?.otpLength || 8;
+  otpCode.value = String(event.target.value || '')
+    .replace(/\D/g, '')
+    .slice(0, maximumLength);
+}
+
+async function verifyOtp() {
+  if (!otpWithdrawal.value) return;
+  verifyingOtp.value = true;
+
+  try {
+    await api.post(`/withdrawals/${otpWithdrawal.value._id}/verify-otp`, {
+      otp: otpCode.value
+    });
+    otpVisible.value = false;
+    toast.add({
+      severity: 'success',
+      summary: 'OTP verified',
+      detail: 'Your withdrawal is waiting for final administrator approval.',
+      life: 3500
+    });
+    await loadLoanDetail(selectedLoanId.value);
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: 'OTP verification failed',
+      detail: apiError(error),
+      life: 4500
+    });
+    await loadLoanDetail(selectedLoanId.value);
+  } finally {
+    verifyingOtp.value = false;
   }
 }
 
@@ -107,15 +263,14 @@ watch(selectedLoanId, (id, oldId) => {
   }
 });
 
+useRealtimeRefresh(['loans', 'repayments', 'withdrawals'], load); 
 onMounted(load);
 </script>
 
 <template>
   <div class="mx-auto max-w-xl space-y-5 pb-6">
     <header>
-      <span
-        class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-600"
-      >
+      <span class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-600">
         My wallet
       </span>
       <h1 class="mt-1 text-2xl font-bold text-slate-900">Loan balance</h1>
@@ -141,9 +296,7 @@ onMounted(load);
         v-if="loans.length > 1"
         class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
       >
-        <label
-          class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500"
-        >
+        <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
           Select loan
         </label>
 
@@ -159,43 +312,35 @@ onMounted(load);
                 {{ option.loanNumber }}
               </strong>
               <span class="text-xs text-slate-500">
-                {{ option.productSnapshot?.name || "Loan" }}
+                {{ option.productSnapshot?.name || 'Loan' }}
               </span>
             </div>
           </template>
 
           <template #value>
-            <span>{{ selectedLoan?.loanNumber || "Select loan" }}</span>
+            <span>{{ selectedLoan?.loanNumber || 'Select loan' }}</span>
           </template>
         </Select>
       </section>
 
       <div
         class="space-y-5 transition-opacity"
-        :class="
-          detailLoading ? 'pointer-events-none opacity-60' : 'opacity-100'
-        "
+        :class="detailLoading ? 'pointer-events-none opacity-60' : 'opacity-100'"
       >
         <!-- Balance card -->
-        <section
-          class="relative overflow-hidden rounded-2xl bg-emerald-600 p-5 text-white shadow-sm"
-        >
+        <section class="relative overflow-hidden rounded-2xl bg-emerald-600 p-5 text-white shadow-sm">
           <div class="relative z-10">
             <div class="flex items-start justify-between gap-4">
               <div>
-                <span
-                  class="text-xs font-semibold uppercase tracking-wide text-emerald-100"
-                >
-                  Outstanding balance
-                </span>
-                <strong class="mt-1 block text-3xl font-bold tracking-tight">
-                  {{ currency(loanDetail.balances?.total) }}
-                </strong>
+                <span class="text-xs font-semibold uppercase tracking-wide text-emerald-100"> 
+                  Balance 
+                </span> 
+                <strong class="mt-1 block text-3xl font-bold tracking-tight"> 
+                  {{ currency(wallet.availableBalance) }} 
+                </strong> 
               </div>
 
-              <div
-                class="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15"
-              >
+              <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
                 <i class="pi pi-wallet text-lg" />
               </div>
             </div>
@@ -207,7 +352,7 @@ onMounted(load);
                   {{ loanDetail.loanNumber }}
                 </strong>
                 <span class="mt-0.5 block truncate text-xs text-emerald-100">
-                  {{ loanDetail.productSnapshot?.name || "Loan" }}
+                  {{ loanDetail.productSnapshot?.name || 'Loan' }}
                 </span>
               </div>
 
@@ -232,22 +377,68 @@ onMounted(load);
             </div>
           </div>
 
-          <div
-            class="absolute -bottom-12 -right-8 h-36 w-36 rounded-full bg-white/10"
-          />
-          <div
-            class="absolute -right-8 -top-16 h-32 w-32 rounded-full bg-white/10"
-          />
+          <div class="absolute -bottom-12 -right-8 h-36 w-36 rounded-full bg-white/10" />
+          <div class="absolute -right-8 -top-16 h-32 w-32 rounded-full bg-white/10" />
+        </section>
+
+        <!-- Withdrawal action -->
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div class="flex items-center gap-3">
+            <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+              <i class="pi pi-money-bill" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <strong class="block text-sm text-slate-900">Withdraw money</strong>
+              <span class="mt-0.5 block text-xs leading-5 text-slate-500">
+                Admin verification and a one-time OTP are required.
+              </span>
+            </div>
+            <Button
+              label="Withdraw"
+              icon="pi pi-arrow-up-right"
+              size="small"
+              :disabled="!canWithdraw"
+              @click="openWithdraw"
+            />
+          </div>
+
+          <div class="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-sm">
+            <div>
+              <span class="block text-xs text-slate-500">Reserved</span>
+              <strong class="mt-1 block text-slate-900">
+                {{ currency(wallet.reservedBalance) }}
+              </strong>
+            </div>
+            <div>
+              <span class="block text-xs text-slate-500">Withdrawn</span>
+              <strong class="mt-1 block text-slate-900">
+                {{ currency(wallet.withdrawnAmount) }}
+              </strong>
+            </div>
+          </div>
+
+          <Message
+            v-if="openWithdrawal"
+            class="mt-4"
+            severity="info"
+            :closable="false"
+          >
+            Finish withdrawal {{ openWithdrawal.withdrawalNumber }} before creating another request.
+          </Message>
+          <Message
+            v-else-if="!['APPROVED', 'ACTIVE'].includes(loanDetail.status)"
+            class="mt-4"
+            severity="warn"
+            :closable="false"
+          >
+            Withdrawals are available after the loan is approved.
+          </Message>
         </section>
 
         <!-- Quick balance details -->
         <section class="grid grid-cols-2 gap-3">
-          <article
-            class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-          >
-            <div
-              class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"
-            >
+          <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
               <i class="pi pi-check-circle" />
             </div>
             <span class="mt-3 block text-xs text-slate-500">Total paid</span>
@@ -256,12 +447,8 @@ onMounted(load);
             </strong>
           </article>
 
-          <article
-            class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-          >
-            <div
-              class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"
-            >
+          <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
               <i class="pi pi-calendar" />
             </div>
             <span class="mt-3 block text-xs text-slate-500">Next payment</span>
@@ -269,21 +456,76 @@ onMounted(load);
               {{ currency(nextInstallment?.remainingDue) }}
             </strong>
             <small class="mt-1 block text-[11px] text-slate-400">
-              {{
-                nextInstallment
-                  ? date(nextInstallment.dueDate)
-                  : "No payment due"
-              }}
+              {{ nextInstallment ? date(nextInstallment.dueDate) : 'No payment due' }}
             </small>
           </article>
+        </section>
+
+        <!-- Withdrawal requests -->
+        <section v-if="withdrawals.length">
+          <div class="mb-3">
+            <span class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-600">
+              Withdrawal
+            </span>
+            <h2 class="mt-1 text-xl font-bold text-slate-900">Requests</h2>
+          </div>
+
+          <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <article
+              v-for="item in withdrawals"
+              :key="item._id"
+              class="border-b border-slate-100 p-4 last:border-b-0"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <strong class="block text-sm text-slate-900">
+                    {{ currency(item.amount) }}
+                  </strong>
+                  <span class="mt-1 block text-xs text-slate-500">
+                    {{ item.withdrawalNumber }} · {{ dateTime(item.createdAt) }}
+                  </span>
+                  <span class="mt-1 block truncate text-xs text-slate-500">
+                    {{ item.requestedBank?.bankName }} · {{ item.requestedBank?.bankAccountNumber }}
+                  </span>
+                </div>
+                <Tag
+                  :value="withdrawalLabel(item.status)"
+                  :severity="withdrawalSeverity(item.status)"
+                />
+              </div>
+
+              <p
+                v-if="item.rejectionReason"
+                class="mt-3 rounded-lg bg-red-50 p-2 text-xs leading-5 text-red-700"
+              >
+                {{ item.rejectionReason }}
+              </p>
+
+              <Button
+                v-if="['WAITING_FOR_OTP', 'OTP_REQUIRED'].includes(item.status)"
+                class="mt-3"
+                label="Enter OTP"
+                icon="pi pi-key"
+                size="small"
+                @click="openOtp(item)"
+              />
+
+              <Message
+                v-if="item.status === 'OTP_VERIFIED'"
+                class="mt-3"
+                severity="success"
+                :closable="false"
+              >
+                OTP verified. Waiting for Admin or Super Admin approval.
+              </Message>
+            </article>
+          </div>
         </section>
 
         <!-- Transactions -->
         <section>
           <div class="mb-3">
-            <span
-              class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-600"
-            >
+            <span class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-600">
               History
             </span>
             <h2 class="mt-1 text-xl font-bold text-slate-900">Transactions</h2>
@@ -300,18 +542,14 @@ onMounted(load);
             >
               <div
                 class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
-                :class="
-                  isRepayment(transaction)
-                    ? 'bg-emerald-50 text-emerald-700'
-                    : 'bg-slate-100 text-slate-600'
-                "
+                :class="isMoneyOut(transaction)
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-slate-100 text-slate-600'"
               >
                 <i
-                  :class="
-                    isRepayment(transaction)
-                      ? 'pi pi-arrow-up-right'
-                      : 'pi pi-arrow-down-left'
-                  "
+                  :class="isMoneyOut(transaction)
+                    ? 'pi pi-arrow-up-right'
+                    : 'pi pi-arrow-down-left'"
                 />
               </div>
 
@@ -326,14 +564,9 @@ onMounted(load);
 
               <strong
                 class="shrink-0 text-right text-sm"
-                :class="
-                  isRepayment(transaction)
-                    ? 'text-emerald-700'
-                    : 'text-slate-800'
-                "
+                :class="isMoneyOut(transaction) ? 'text-emerald-700' : 'text-slate-800'"
               >
-                {{ isRepayment(transaction) ? "−" : ""
-                }}{{ currency(transaction.amount) }}
+                {{ isMoneyOut(transaction) ? '−' : '' }}{{ currency(transaction.amount) }}
               </strong>
             </article>
           </div>
@@ -342,14 +575,10 @@ onMounted(load);
             v-else
             class="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center"
           >
-            <div
-              class="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"
-            >
+            <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
               <i class="pi pi-receipt" />
             </div>
-            <strong class="mt-3 block text-sm text-slate-800"
-              >No transactions</strong
-            >
+            <strong class="mt-3 block text-sm text-slate-800">No transactions</strong>
             <span class="mt-1 block text-xs text-slate-500">
               Confirmed loan activity will appear here.
             </span>
@@ -363,15 +592,11 @@ onMounted(load);
       v-else
       class="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center"
     >
-      <div
-        class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"
-      >
+      <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
         <i class="pi pi-wallet text-xl" />
       </div>
       <strong class="mt-4 block text-slate-800">Your wallet is empty</strong>
-      <span
-        class="mx-auto mt-1 block max-w-xs text-sm leading-5 text-slate-500"
-      >
+      <span class="mx-auto mt-1 block max-w-xs text-sm leading-5 text-slate-500">
         Once a loan is approved, its balance and transactions will appear here.
       </span>
       <RouterLink
@@ -382,5 +607,105 @@ onMounted(load);
         <i class="pi pi-arrow-right text-xs" />
       </RouterLink>
     </div>
+
+    <Dialog
+      v-model:visible="withdrawVisible"
+      modal
+      header="Withdraw wallet balance"
+      :style="{ width: '520px', maxWidth: '95vw' }"
+    >
+      <form @submit.prevent="submitWithdrawal">
+        <div class="space-y-4">
+          <Message severity="info" :closable="false">
+            Enter the same bank name and account number saved in your customer information. An administrator will compare them manually.
+          </Message>
+
+          <div class="form-field">
+            <label>Withdrawal amount *</label>
+            <InputNumber
+              v-model="withdrawForm.amount"
+              mode="currency"
+              currency="PHP"
+              locale="en-PH"
+              :min="1"
+              :max="availableBalance"
+              fluid
+              required
+            />
+            <small>Available: {{ currency(wallet.availableBalance) }}</small>
+          </div>
+
+          <div class="form-field">
+            <label>Bank name *</label>
+            <InputText v-model.trim="withdrawForm.bankName" maxlength="120" fluid required />
+          </div>
+
+          <div class="form-field">
+            <label>Bank account number *</label>
+            <InputText
+              v-model.trim="withdrawForm.bankAccountNumber"
+              maxlength="80"
+              autocomplete="off"
+              fluid
+              required
+            />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <Button
+            label="Cancel"
+            type="button"
+            severity="secondary"
+            text
+            @click="withdrawVisible = false"
+          />
+          <Button label="Submit withdrawal" type="submit" :loading="withdrawing" />
+        </div>
+      </form>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="otpVisible"
+      modal
+      header="Verify withdrawal OTP"
+      :style="{ width: '460px', maxWidth: '95vw' }"
+    >
+      <form @submit.prevent="verifyOtp">
+        <Message severity="info" :closable="false">
+          Enter the {{ otpWithdrawal?.otpLength }}-digit code provided by the administrator. The code expires after 10 minutes and allows five attempts.
+        </Message>
+
+        <div class="form-field mt-4">
+          <label>One-time password *</label>
+          <InputText
+            :model-value="otpCode"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            :maxlength="otpWithdrawal?.otpLength || 8"
+            class="w-full text-center text-2xl font-bold tracking-[0.3em]"
+            required
+            @input="updateOtp"
+          />
+        </div>
+
+        <div class="form-actions">
+          <Button
+            label="Cancel"
+            type="button"
+            severity="secondary"
+            text
+            @click="otpVisible = false"
+          />
+          <Button
+            label="Verify and withdraw"
+            type="submit"
+            icon="pi pi-check"
+            :loading="verifyingOtp"
+            :disabled="otpCode.length !== otpWithdrawal?.otpLength"
+          />
+        </div>
+      </form>
+    </Dialog>
   </div>
 </template>

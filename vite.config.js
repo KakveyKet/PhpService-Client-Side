@@ -4,14 +4,17 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
-
   server: {
     port: 5173,
-
     proxy: {
       "/api": {
-        target: "http://localhost:5000",
+        target: "http://127.0.0.1:5000",
         changeOrigin: true,
+      },
+      "/socket.io": {
+        target: "http://127.0.0.1:5000",
+        changeOrigin: true,
+        ws: true,
       },
     },
   },

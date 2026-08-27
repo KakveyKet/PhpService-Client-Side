@@ -13,6 +13,7 @@ import Tag from "primevue/tag";
 import PageHeader from "../components/PageHeader.vue";
 import api from "../services/api.js";
 import { useAuthStore } from "../stores/auth.js";
+import { useRealtimeRefresh } from "../composables/useRealtimeRefresh.js";
 import {
   apiError,
   currency,
@@ -438,6 +439,7 @@ async function resetCustomerPassword() {
   }
 }
 
+useRealtimeRefresh(["customers"], load);
 onMounted(load);
 </script>
 

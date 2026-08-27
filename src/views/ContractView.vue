@@ -12,6 +12,7 @@ import Textarea from 'primevue/textarea';
 import PageHeader from '../components/PageHeader.vue';
 import api from '../services/api.js';
 import { useAuthStore } from '../stores/auth.js';
+import { useRealtimeRefresh } from '../composables/useRealtimeRefresh.js';
 import {
   apiError,
   currency,
@@ -144,6 +145,7 @@ function printContract() {
   window.print();
 }
 
+useRealtimeRefresh(['loans', 'applications'], load);
 onMounted(load);
 </script>
 

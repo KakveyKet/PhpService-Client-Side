@@ -1,14 +1,24 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { useToast } from "primevue/usetoast";
 import Avatar from "primevue/avatar";
 import Button from "primevue/button";
 import Tag from "primevue/tag";
 import { useAuthStore } from "../stores/auth.js";
+import {
+  connectRealtime,
+  disconnectRealtime,
+  onRealtimeEvent,
+  realtimeConnectionError,
+  realtimeReady,
+} from "../services/socket.js";
 
 const auth = useAuthStore();
 const router = useRouter();
+const toast = useToast();
 const sidebarOpen = ref(false);
+let removeDataChangedListener = null;
 
 const roleLabel = computed(() => {
   const labels = {
@@ -47,6 +57,12 @@ const menuItems = computed(() => {
       to: "/applications",
       roles: null,
     },
+    {
+      label: "Withdraw",
+      icon: "pi pi-money-bill",
+      to: "/withdrawals",
+      roles: ["ADMIN", "SUPER_ADMIN"],
+    },
     { label: "Loans", icon: "pi pi-wallet", to: "/loans", roles: null },
     {
       label: "Contract",
@@ -80,9 +96,45 @@ function closeSidebar() {
 }
 
 function logout() {
+  disconnectRealtime();
   auth.logout();
   router.push("/login");
 }
+
+function showRealtimeNotice(payload = {}) {
+  const notices = {
+    CUSTOMER_REGISTERED: {
+      summary: "New customer registered",
+      detail: "The customer list and dashboard were updated.",
+    },
+    LOAN_APPLICATION_CREATED: {
+      summary: "New loan application",
+      detail: "A submitted application is ready for review.",
+    },
+    WITHDRAWAL_REQUESTED: {
+      summary: "New withdrawal request",
+      detail: "Review the customer bank information and prepare an OTP.",
+    },
+  };
+  const notice = notices[payload.action];
+
+  if (notice) {
+    toast.add({ severity: "info", ...notice, life: 3500 });
+  }
+}
+
+onMounted(() => {
+  connectRealtime();
+  removeDataChangedListener = onRealtimeEvent(
+    "data:changed",
+    showRealtimeNotice,
+  );
+});
+
+onBeforeUnmount(() => {
+  removeDataChangedListener?.();
+  disconnectRealtime();
+});
 </script>
 
 <template>
@@ -186,6 +238,17 @@ function logout() {
               class="pi pi-chevron-right text-[0.72rem] text-slate-400 max-[700px]:hidden"
             />
           </RouterLink>
+
+          <!-- <div class="hidden items-center gap-2 text-[0.83rem] font-semibold text-[#58706d] min-[821px]:flex">
+            <span
+              class="h-2 w-2 rounded-full"
+              :class="realtimeReady
+                ? 'bg-emerald-500 shadow-[0_0_0_4px_#d1fae5]'
+                : 'bg-amber-500 shadow-[0_0_0_4px_#fef3c7]'"
+              :title="realtimeConnectionError || 'Real-time connection status'"
+            />
+            {{ realtimeReady ? 'Live updates' : 'Reconnecting' }}
+          </div> -->
         </div>
       </header>
       <main class="page-container">
