@@ -1,5 +1,12 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
 import { useToast } from "primevue/usetoast";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
@@ -39,6 +46,8 @@ const withdrawing = ref(false);
 const verifyingOtp = ref(false);
 const dialogWithdrawalId = ref(null);
 const otpCode = ref("");
+const otpClock = ref(Date.now());
+let otpClockTimer = null;
 const withdrawForm = reactive({
   amount: null,
 });
@@ -78,6 +87,43 @@ const dialogWithdrawal = computed(() => {
     withdrawals.value.find((item) => item._id === dialogWithdrawalId.value) ||
     null
   );
+});
+
+const isOtpStep = computed(() => {
+  return ["PENDING_REVIEW", "WAITING_FOR_OTP", "OTP_REQUIRED"].includes(
+    dialogWithdrawal.value?.status,
+  );
+});
+
+const otpReady = computed(() => {
+  return (
+    ["WAITING_FOR_OTP", "OTP_REQUIRED"].includes(
+      dialogWithdrawal.value?.status,
+    ) && [6, 8].includes(dialogWithdrawal.value?.otpLength)
+  );
+});
+
+const expectedOtpLength = computed(() => {
+  return otpReady.value ? dialogWithdrawal.value.otpLength : 8;
+});
+
+const otpSecondsRemaining = computed(() => {
+  if (!otpReady.value || !dialogWithdrawal.value?.otpExpiresAt) return 600;
+
+  return Math.max(
+    0,
+    Math.ceil(
+      (new Date(dialogWithdrawal.value.otpExpiresAt).getTime() -
+        otpClock.value) /
+        1000,
+    ),
+  );
+});
+
+const otpCountdown = computed(() => {
+  const minutes = Math.floor(otpSecondsRemaining.value / 60);
+  const seconds = otpSecondsRemaining.value % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 });
 
 const availableBalance = computed(() => {
@@ -219,7 +265,7 @@ async function submitWithdrawal() {
       severity: "success",
       summary: "Withdrawal submitted",
       detail:
-        "Keep this window open. The OTP box will appear after an administrator generates your code.",
+        "The OTP field is ready below and will activate after an administrator generates your code.",
       life: 4000,
     });
     await loadLoanDetail(selectedLoanId.value);
@@ -236,14 +282,14 @@ async function submitWithdrawal() {
 }
 
 function updateOtp(event) {
-  const maximumLength = dialogWithdrawal.value?.otpLength || 8;
+  const maximumLength = expectedOtpLength.value;
   otpCode.value = String(event.target.value || "")
     .replace(/\D/g, "")
     .slice(0, maximumLength);
 }
 
 async function verifyOtp() {
-  if (!dialogWithdrawal.value) return;
+  if (!dialogWithdrawal.value || !otpReady.value) return;
   verifyingOtp.value = true;
 
   try {
@@ -278,11 +324,14 @@ watch(selectedLoanId, (id, oldId) => {
 });
 
 watch(
-  () => dialogWithdrawal.value?.status,
-  (status, oldStatus) => {
+  [
+    () => dialogWithdrawal.value?.status,
+    () => dialogWithdrawal.value?.otpGeneratedAt,
+  ],
+  ([status, generatedAt], [oldStatus, oldGeneratedAt]) => {
     if (
-      status !== oldStatus &&
-      ["WAITING_FOR_OTP", "OTP_REQUIRED"].includes(status)
+      ["WAITING_FOR_OTP", "OTP_REQUIRED"].includes(status) &&
+      (status !== oldStatus || generatedAt !== oldGeneratedAt)
     ) {
       otpCode.value = "";
     }
@@ -290,7 +339,16 @@ watch(
 );
 
 useRealtimeRefresh(["loans", "repayments", "withdrawals"], load);
-onMounted(load);
+onMounted(() => {
+  load();
+  otpClockTimer = window.setInterval(() => {
+    otpClock.value = Date.now();
+  }, 1000);
+});
+
+onBeforeUnmount(() => {
+  window.clearInterval(otpClockTimer);
+});
 </script>
 
 <template>
@@ -437,9 +495,9 @@ onMounted(load);
               <strong class="block text-sm text-slate-900"
                 >Withdraw money</strong
               >
-              <!-- <span class="mt-0.5 block text-xs leading-5 text-slate-500">
+              <span class="mt-0.5 block text-xs leading-5 text-slate-500">
                 Admin verification and a one-time OTP are required.
-              </span> -->
+              </span>
             </div>
             <Button
               :label="withdrawButtonLabel"
@@ -575,7 +633,7 @@ onMounted(load);
                 severity="success"
                 :closable="false"
               >
-                OTP verified. Waiting for Admin or Super Admin approval.
+                OTP verified.
               </Message>
             </article>
           </div>
@@ -697,10 +755,10 @@ onMounted(load);
     >
       <form v-if="!dialogWithdrawal" @submit.prevent="submitWithdrawal">
         <div class="space-y-4">
-          <!-- <Message severity="info" :closable="false">
+          <Message severity="info" :closable="false">
             Your destination bank name and account number will be taken
             automatically from this loan application.
-          </Message> -->
+          </Message>
 
           <div class="form-field">
             <label>Withdrawal amount *</label>
@@ -762,39 +820,28 @@ onMounted(load);
           </span>
         </div>
 
-        <Message
-          v-if="dialogWithdrawal.status === 'PENDING_REVIEW'"
-          class="mt-4"
-          severity="info"
-          :closable="false"
-        >
-          Please wait OTP number
-        </Message>
-
-        <form
-          v-else-if="
-            ['WAITING_FOR_OTP', 'OTP_REQUIRED'].includes(
-              dialogWithdrawal.status,
-            )
-          "
-          class="mt-4"
-          @submit.prevent="verifyOtp"
-        >
-          <Message severity="info" :closable="false">
-            Enter the {{ dialogWithdrawal.otpLength }}-digit code. The code
-            expires after 10 minutes and allows five attempts.
-          </Message>
-
-          <div class="form-field mt-4">
-            <label>One-time OTP *</label>
+        <form v-if="isOtpStep" class="mt-4" @submit.prevent="verifyOtp">
+          <div class="form-field">
+            <label class="flex items-center justify-between gap-3">
+              <span>OTP code</span>
+              <!-- <span
+                class="font-mono text-sm font-bold"
+                :class="
+                  otpSecondsRemaining ? 'text-emerald-700' : 'text-red-600'
+                "
+              >
+                {{ otpCountdown }}
+              </span> -->
+            </label>
             <InputText
               :model-value="otpCode"
               inputmode="numeric"
               autocomplete="one-time-code"
-              :maxlength="dialogWithdrawal.otpLength || 8"
+              :maxlength="expectedOtpLength"
+              placeholder="Enter OTP"
               class="w-full text-center text-2xl font-bold tracking-[0.3em]"
               required
-              autofocus
+              :autofocus="otpReady"
               @input="updateOtp"
             />
           </div>
@@ -812,7 +859,11 @@ onMounted(load);
               type="submit"
               icon="pi pi-check"
               :loading="verifyingOtp"
-              :disabled="otpCode.length !== dialogWithdrawal.otpLength"
+              :disabled="
+                !otpReady ||
+                !otpSecondsRemaining ||
+                otpCode.length !== dialogWithdrawal.otpLength
+              "
             />
           </div>
         </form>
@@ -851,14 +902,7 @@ onMounted(load);
           }}
         </Message>
 
-        <div
-          v-if="
-            !['WAITING_FOR_OTP', 'OTP_REQUIRED'].includes(
-              dialogWithdrawal.status,
-            )
-          "
-          class="form-actions"
-        >
+        <div v-if="!isOtpStep" class="form-actions">
           <Button label="Close" severity="secondary" @click="closeWithdraw" />
         </div>
       </template>
