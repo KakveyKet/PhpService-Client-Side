@@ -1,12 +1,5 @@
 <script setup>
-import {
-  computed,
-  onBeforeUnmount,
-  onMounted,
-  reactive,
-  ref,
-  watch,
-} from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useToast } from "primevue/usetoast";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
@@ -46,8 +39,6 @@ const withdrawing = ref(false);
 const verifyingOtp = ref(false);
 const dialogWithdrawalId = ref(null);
 const otpCode = ref("");
-const otpClock = ref(Date.now());
-let otpClockTimer = null;
 const withdrawForm = reactive({
   amount: null,
 });
@@ -105,25 +96,6 @@ const otpReady = computed(() => {
 
 const expectedOtpLength = computed(() => {
   return otpReady.value ? dialogWithdrawal.value.otpLength : 8;
-});
-
-const otpSecondsRemaining = computed(() => {
-  if (!otpReady.value || !dialogWithdrawal.value?.otpExpiresAt) return 600;
-
-  return Math.max(
-    0,
-    Math.ceil(
-      (new Date(dialogWithdrawal.value.otpExpiresAt).getTime() -
-        otpClock.value) /
-        1000,
-    ),
-  );
-});
-
-const otpCountdown = computed(() => {
-  const minutes = Math.floor(otpSecondsRemaining.value / 60);
-  const seconds = otpSecondsRemaining.value % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 });
 
 const availableBalance = computed(() => {
@@ -339,16 +311,7 @@ watch(
 );
 
 useRealtimeRefresh(["loans", "repayments", "withdrawals"], load);
-onMounted(() => {
-  load();
-  otpClockTimer = window.setInterval(() => {
-    otpClock.value = Date.now();
-  }, 1000);
-});
-
-onBeforeUnmount(() => {
-  window.clearInterval(otpClockTimer);
-});
+onMounted(load);
 </script>
 
 <template>
@@ -633,7 +596,7 @@ onBeforeUnmount(() => {
                 severity="success"
                 :closable="false"
               >
-                OTP verified.
+                OTP verified. Waiting for Admin or Super Admin approval.
               </Message>
             </article>
           </div>
@@ -755,10 +718,10 @@ onBeforeUnmount(() => {
     >
       <form v-if="!dialogWithdrawal" @submit.prevent="submitWithdrawal">
         <div class="space-y-4">
-          <Message severity="info" :closable="false">
+          <!-- <Message severity="info" :closable="false">
             Your destination bank name and account number will be taken
             automatically from this loan application.
-          </Message>
+          </Message> -->
 
           <div class="form-field">
             <label>Withdrawal amount *</label>
@@ -822,17 +785,7 @@ onBeforeUnmount(() => {
 
         <form v-if="isOtpStep" class="mt-4" @submit.prevent="verifyOtp">
           <div class="form-field">
-            <label class="flex items-center justify-between gap-3">
-              <span>OTP code</span>
-              <!-- <span
-                class="font-mono text-sm font-bold"
-                :class="
-                  otpSecondsRemaining ? 'text-emerald-700' : 'text-red-600'
-                "
-              >
-                {{ otpCountdown }}
-              </span> -->
-            </label>
+            <label>OTP code</label>
             <InputText
               :model-value="otpCode"
               inputmode="numeric"
@@ -860,9 +813,7 @@ onBeforeUnmount(() => {
               icon="pi pi-check"
               :loading="verifyingOtp"
               :disabled="
-                !otpReady ||
-                !otpSecondsRemaining ||
-                otpCode.length !== dialogWithdrawal.otpLength
+                !otpReady || otpCode.length !== dialogWithdrawal.otpLength
               "
             />
           </div>
@@ -874,8 +825,7 @@ onBeforeUnmount(() => {
           severity="success"
           :closable="false"
         >
-          OTP verified successfully. Your withdrawal is waiting for final Admin
-          or Super Admin approval.
+          OTP verified successfully.
         </Message>
 
         <Message
