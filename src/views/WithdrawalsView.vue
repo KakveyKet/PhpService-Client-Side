@@ -79,14 +79,6 @@ function canReject(item) {
   return isOpen(item);
 }
 
-function bankMatchLabel(matches) {
-  return matches ? 'MATCH' : 'MISMATCH';
-}
-
-function bankMatchSeverity(matches) {
-  return matches ? 'success' : 'danger';
-}
-
 async function load() {
   loading.value = true;
   try {
@@ -254,7 +246,7 @@ onMounted(load);
   <div>
     <PageHeader
       title="Withdrawals"
-      subtitle="Review customer bank information and issue secure one-time passwords."
+      subtitle="Review withdrawal requests, issue secure one-time passwords and approve verified requests."
     >
       <Button
         label="Refresh"
@@ -266,7 +258,7 @@ onMounted(load);
     </PageHeader>
 
     <Message class="mb-5" severity="warn" :closable="false">
-      Check the requested bank name and account number against the saved customer information before generating an OTP. The system highlights differences, but the final decision is manual.
+      The destination bank details are copied from the customer's loan application. Review them before generating an OTP, and reject the request if the saved information is not valid.
     </Message>
 
     <section class="table-card">
@@ -305,17 +297,11 @@ onMounted(load);
             <strong>{{ currency(data.amount) }}</strong>
           </template>
         </Column>
-        <Column header="Bank check">
+        <Column header="Destination bank">
           <template #body="{ data }">
-            <div class="flex flex-col items-start gap-1">
-              <Tag
-                :value="`NAME ${bankMatchLabel(data.bankMatch?.bankName)}`"
-                :severity="bankMatchSeverity(data.bankMatch?.bankName)"
-              />
-              <Tag
-                :value="`NUMBER ${bankMatchLabel(data.bankMatch?.bankAccountNumber)}`"
-                :severity="bankMatchSeverity(data.bankMatch?.bankAccountNumber)"
-              />
+            <div>
+              <strong class="block text-sm">{{ data.requestedBank?.bankName || '—' }}</strong>
+              <small class="table-subtext">{{ data.requestedBank?.bankAccountNumber || '—' }}</small>
             </div>
           </template>
         </Column>
@@ -371,36 +357,19 @@ onMounted(load);
           </div>
         </div>
 
-        <h3 class="mb-3 font-bold text-slate-900">Manual bank comparison</h3>
+        <h3 class="mb-3 font-bold text-slate-900">Destination from loan application</h3>
         <div class="overflow-hidden rounded-xl border border-slate-200">
-          <div class="grid grid-cols-[120px_1fr_1fr] gap-3 bg-slate-50 p-3 text-xs font-bold uppercase tracking-wide text-slate-500">
+          <div class="grid grid-cols-[120px_1fr] gap-3 bg-slate-50 p-3 text-xs font-bold uppercase tracking-wide text-slate-500">
             <span>Field</span>
-            <span>Customer request</span>
             <span>Saved information</span>
           </div>
-          <div class="grid grid-cols-[120px_1fr_1fr] gap-3 border-t border-slate-100 p-3 text-sm">
-            <div>
-              <strong>Bank name</strong>
-              <Tag
-                class="mt-2 block w-fit"
-                :value="bankMatchLabel(selected.bankMatch?.bankName)"
-                :severity="bankMatchSeverity(selected.bankMatch?.bankName)"
-              />
-            </div>
+          <div class="grid grid-cols-[120px_1fr] gap-3 border-t border-slate-100 p-3 text-sm">
+            <strong>Bank name</strong>
             <span class="break-words">{{ selected.requestedBank?.bankName || '—' }}</span>
-            <span class="break-words">{{ selected.customerBankSnapshot?.bankName || '—' }}</span>
           </div>
-          <div class="grid grid-cols-[120px_1fr_1fr] gap-3 border-t border-slate-100 p-3 text-sm">
-            <div>
-              <strong>Account</strong>
-              <Tag
-                class="mt-2 block w-fit"
-                :value="bankMatchLabel(selected.bankMatch?.bankAccountNumber)"
-                :severity="bankMatchSeverity(selected.bankMatch?.bankAccountNumber)"
-              />
-            </div>
+          <div class="grid grid-cols-[120px_1fr] gap-3 border-t border-slate-100 p-3 text-sm">
+            <strong>Account</strong>
             <span class="break-all">{{ selected.requestedBank?.bankAccountNumber || '—' }}</span>
-            <span class="break-all">{{ selected.customerBankSnapshot?.bankAccountNumber || '—' }}</span>
           </div>
         </div>
 
@@ -451,7 +420,7 @@ onMounted(load);
               rows="2"
               maxlength="500"
               class="w-full"
-              placeholder="For example: bank account number does not match"
+              placeholder="For example: saved bank information could not be confirmed"
             />
           </div>
         </template>

@@ -66,10 +66,10 @@ async function submit() {
           fluid
           :loading="auth.loading"
         />
-        <div class="login-hint">
+        <!-- <div class="login-hint">
           Development seed: <strong>superadmin</strong> /
           <strong>ChangeMe123!</strong>
-        </div>
+        </div> -->
         <div class="auth-card__footer">
           Customer portal?
           <RouterLink to="/customer/login">Sign in</RouterLink> or
