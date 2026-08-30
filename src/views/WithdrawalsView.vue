@@ -38,6 +38,19 @@ const otpLengthOptions = [
   { label: '6 digits', value: 6 },
   { label: '8 digits', value: 8 }
 ];
+const rejectionReasonOptions = [
+  'WITHDRAWAL WRONG AMOUNT',
+  'WRONG BANK ACCOUNT',
+  'LOW CREDIT',
+  'WRONG INFORMATION',
+  'INSURANCE',
+  'PLATEFORM FEE',
+  'VIP CHANNEL',
+  'NEW DOCUMENT AND NEW OTP CODE',
+  'FREEZE LOAN ACCOUNT',
+  'INLAND REVENUE TAX',
+  'NEED NEW OTP CODE'
+];
 
 function statusLabel(status) {
   return status?.replaceAll('_', ' ') || 'UNKNOWN';
@@ -172,7 +185,7 @@ async function rejectWithdrawal() {
     toast.add({
       severity: 'warn',
       summary: 'Reason required',
-      detail: 'Explain why the withdrawal is rejected.',
+      detail: 'Select why the withdrawal is rejected.',
       life: 3000
     });
     return;
@@ -415,12 +428,11 @@ onMounted(load);
             <label class="mb-2 block text-sm font-semibold text-red-800">
               Rejection reason
             </label>
-            <Textarea
+            <Select
               v-model="rejectionReason"
-              rows="2"
-              maxlength="500"
-              class="w-full"
-              placeholder="For example: saved bank information could not be confirmed"
+              :options="rejectionReasonOptions"
+              placeholder="Select rejection reason"
+              fluid
             />
           </div>
         </template>
