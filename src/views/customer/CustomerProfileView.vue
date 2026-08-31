@@ -3,9 +3,11 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import Button from "primevue/button";
+import Tag from "primevue/tag";
 import api from "../../services/api.js";
 import { useAuthStore } from "../../stores/auth.js";
 import { useRealtimeRefresh } from "../../composables/useRealtimeRefresh.js";
+import { creditLevelDetails } from "../../utils/credit.js";
 import { apiError, currency, date, fullName } from "../../utils/formatters.js";
 
 const auth = useAuthStore();
@@ -14,6 +16,8 @@ const toast = useToast();
 const customer = ref(null);
 const dashboard = ref({});
 const loading = ref(true);
+
+const credit = computed(() => creditLevelDetails(customer.value?.creditScore));
 
 const initials = computed(() => {
   const words = fullName(customer.value)
@@ -101,6 +105,47 @@ onMounted(load);
     </template>
 
     <template v-else-if="customer">
+      <!-- Customer credit -->
+      <section
+        class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
+        <div class="flex items-center gap-3">
+          <div
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600"
+          >
+            <i class="pi pi-star-fill" />
+          </div>
+
+          <div class="min-w-0 flex-1">
+            <span
+              class="block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
+              Customer credit
+            </span>
+            <div class="mt-1 flex items-center gap-2">
+              <strong class="text-2xl text-slate-900">{{
+                credit.score
+              }}</strong>
+              <!-- <Tag :value="credit.label" :severity="credit.severity" /> -->
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div
+            class="h-full rounded-full bg-amber-400 transition-all duration-500"
+            :style="{ width: `${credit.progress}%` }"
+          />
+        </div>
+
+        <small class="mt-2 block text-slate-500">
+          <template v-if="credit.nextScore">
+            Next level: {{ credit.nextLabel }} at {{ credit.nextScore }} points
+          </template>
+          <template v-else>Highest credit level reached</template>
+        </small>
+      </section>
+
       <!-- Customer identity -->
       <section
         class="relative overflow-hidden rounded-2xl bg-emerald-600 p-5 text-white shadow-sm"

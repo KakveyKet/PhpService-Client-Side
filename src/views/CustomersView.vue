@@ -14,6 +14,7 @@ import PageHeader from "../components/PageHeader.vue";
 import api from "../services/api.js";
 import { useAuthStore } from "../stores/auth.js";
 import { useRealtimeRefresh } from "../composables/useRealtimeRefresh.js";
+import { creditLevelDetails } from "../utils/credit.js";
 import {
   apiError,
   currency,
@@ -66,6 +67,7 @@ const emptyForm = () => ({
   dateOfBirth: null,
   occupation: "",
   monthlyIncome: 0,
+  creditScore: 0,
   status: "ACTIVE",
   identityVerificationStatus: "NOT_SUBMITTED",
   identityVerificationNote: "",
@@ -238,6 +240,7 @@ async function openEdit(customer) {
     monthlyIncome: Number(
       customer.monthlyIncome?.$numberDecimal || customer.monthlyIncome || 0,
     ),
+    creditScore: Number(customer.creditScore || 0),
     status: customer.status || "ACTIVE",
     identityVerificationStatus:
       customer.identityVerificationStatus || "NOT_SUBMITTED",
@@ -506,6 +509,19 @@ onMounted(load);
           </template>
         </Column>
 
+        <Column header="Credit">
+          <template #body="{ data }">
+            <strong class="block text-sm text-slate-900">
+              {{ creditLevelDetails(data.creditScore).score }}
+            </strong>
+            <Tag
+              class="mt-1"
+              :value="creditLevelDetails(data.creditScore).label"
+              :severity="creditLevelDetails(data.creditScore).severity"
+            />
+          </template>
+        </Column>
+
         <Column header="Login">
           <template #body="{ data }">
             {{ data.userId?.username || (data.userId ? "Linked account" : "No account") }}
@@ -673,6 +689,21 @@ onMounted(load);
               locale="en-PH"
               :min="0"
             />
+          </div>
+
+          <div v-if="editingId" class="form-field">
+            <label for="customerCreditScore">Customer credit score</label>
+            <InputNumber
+              input-id="customerCreditScore"
+              v-model="form.creditScore"
+              :min="0"
+              :max="10000"
+              :use-grouping="false"
+              show-buttons
+            />
+            <small class="text-slate-500">
+              Current level: {{ creditLevelDetails(form.creditScore).label }}
+            </small>
           </div>
 
           <div class="form-field">
