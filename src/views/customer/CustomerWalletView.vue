@@ -94,10 +94,6 @@ const otpReady = computed(() => {
   );
 });
 
-const expectedOtpLength = computed(() => {
-  return otpReady.value ? dialogWithdrawal.value.otpLength : 8;
-});
-
 const availableBalance = computed(() => {
   return numberValue(wallet.value?.availableBalance);
 });
@@ -236,8 +232,7 @@ async function submitWithdrawal() {
     toast.add({
       severity: "success",
       summary: "Withdrawal submitted",
-      detail:
-        "The OTP field is ready below and will activate after an administrator generates your code.",
+      detail: "Enter the OTP after an administrator provides your code.",
       life: 4000,
     });
     await loadLoanDetail(selectedLoanId.value);
@@ -253,20 +248,34 @@ async function submitWithdrawal() {
   }
 }
 
-function updateOtp(event) {
-  const maximumLength = expectedOtpLength.value;
-  otpCode.value = String(event.target.value || "")
+function normalizeOtp(value) {
+  return String(value || "")
+    .normalize("NFKC")
     .replace(/\D/g, "")
-    .slice(0, maximumLength);
+    .slice(0, 8);
 }
 
 async function verifyOtp() {
-  if (!dialogWithdrawal.value || !otpReady.value) return;
+  if (!dialogWithdrawal.value) return;
+
+  const otp = normalizeOtp(otpCode.value);
+  otpCode.value = otp;
+
+  if (!/^\d{6}$|^\d{8}$/.test(otp)) {
+    toast.add({
+      severity: "warn",
+      summary: "Complete OTP required",
+      detail: "Enter the complete 6- or 8-digit OTP.",
+      life: 3000,
+    });
+    return;
+  }
+
   verifyingOtp.value = true;
 
   try {
     await api.post(`/withdrawals/${dialogWithdrawal.value._id}/verify-otp`, {
-      otp: otpCode.value,
+      otp,
     });
     toast.add({
       severity: "success",
@@ -310,6 +319,11 @@ watch(
   },
 );
 
+watch(otpCode, (value) => {
+  const normalized = normalizeOtp(value);
+  if (normalized !== value) otpCode.value = normalized;
+});
+
 useRealtimeRefresh(["loans", "repayments", "withdrawals"], load);
 onMounted(load);
 </script>
@@ -323,9 +337,6 @@ onMounted(load);
         My wallet
       </span>
       <h1 class="mt-1 text-2xl font-bold text-slate-900">Loan balance</h1>
-      <p class="mt-1 text-sm text-slate-500">
-        View your balance, payment progress and transactions.
-      </p>
     </header>
 
     <template v-if="loading">
@@ -420,20 +431,6 @@ onMounted(load);
                 :severity="statusSeverity(loanDetail.status)"
               />
             </div>
-
-            <div class="mt-6">
-              <div class="mb-2 flex items-center justify-between text-xs">
-                <span class="text-emerald-100">Payment progress</span>
-                <strong>{{ paidProgress }}%</strong>
-              </div>
-
-              <div class="h-2 overflow-hidden rounded-full bg-white/20">
-                <div
-                  class="h-full rounded-full bg-white transition-all duration-500"
-                  :style="{ width: `${paidProgress}%` }"
-                />
-              </div>
-            </div>
           </div>
 
           <div
@@ -458,9 +455,6 @@ onMounted(load);
               <strong class="block text-sm text-slate-900"
                 >Withdraw money</strong
               >
-              <span class="mt-0.5 block text-xs leading-5 text-slate-500">
-                Admin verification and a one-time OTP are required.
-              </span>
             </div>
             <Button
               :label="withdrawButtonLabel"
@@ -470,79 +464,6 @@ onMounted(load);
               @click="openWithdraw"
             />
           </div>
-
-          <div
-            class="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-sm"
-          >
-            <div>
-              <span class="block text-xs text-slate-500">Reserved</span>
-              <strong class="mt-1 block text-slate-900">
-                {{ currency(wallet.reservedBalance) }}
-              </strong>
-            </div>
-            <div>
-              <span class="block text-xs text-slate-500">Withdrawn</span>
-              <strong class="mt-1 block text-slate-900">
-                {{ currency(wallet.withdrawnAmount) }}
-              </strong>
-            </div>
-          </div>
-
-          <Message
-            v-if="openWithdrawal"
-            class="mt-4"
-            severity="info"
-            :closable="false"
-          >
-            Withdrawal {{ openWithdrawal.withdrawalNumber }} is still in
-            progress. Select Continue to view its current step.
-          </Message>
-          <Message
-            v-else-if="!['APPROVED', 'ACTIVE'].includes(loanDetail.status)"
-            class="mt-4"
-            severity="warn"
-            :closable="false"
-          >
-            Withdrawals are available after the loan is approved.
-          </Message>
-        </section>
-
-        <!-- Quick balance details -->
-        <section class="grid grid-cols-2 gap-3">
-          <article
-            class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-          >
-            <div
-              class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"
-            >
-              <i class="pi pi-check-circle" />
-            </div>
-            <span class="mt-3 block text-xs text-slate-500">Total paid</span>
-            <strong class="mt-1 block break-all text-base text-slate-900">
-              {{ currency(loanDetail.balances?.totalPaid) }}
-            </strong>
-          </article>
-
-          <article
-            class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-          >
-            <div
-              class="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"
-            >
-              <i class="pi pi-calendar" />
-            </div>
-            <span class="mt-3 block text-xs text-slate-500">Next payment</span>
-            <strong class="mt-1 block break-all text-base text-slate-900">
-              {{ currency(nextInstallment?.remainingDue) }}
-            </strong>
-            <small class="mt-1 block text-[11px] text-slate-400">
-              {{
-                nextInstallment
-                  ? date(nextInstallment.dueDate)
-                  : "No payment due"
-              }}
-            </small>
-          </article>
         </section>
 
         <!-- Withdrawal requests -->
@@ -596,7 +517,7 @@ onMounted(load);
                 severity="success"
                 :closable="false"
               >
-                OTP verified. Waiting for Admin or Super Admin approval.
+                OTP verified.
               </Message>
             </article>
           </div>
@@ -710,9 +631,7 @@ onMounted(load);
     <Dialog
       v-model:visible="withdrawVisible"
       modal
-      :header="
-        dialogWithdrawal ? 'Withdrawal progress' : 'Withdraw wallet balance'
-      "
+      :header="dialogWithdrawal ? 'Enter OTP Code' : 'Withdraw wallet balance'"
       :style="{ width: '520px', maxWidth: '95vw' }"
       @hide="closeWithdraw"
     >
@@ -756,46 +675,17 @@ onMounted(load);
       </form>
 
       <template v-else>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="rounded-xl bg-slate-50 p-3">
-            <span class="block text-xs text-slate-500">Request</span>
-            <strong class="mt-1 block text-sm text-slate-900">
-              {{ dialogWithdrawal.withdrawalNumber }}
-            </strong>
-          </div>
-          <div class="rounded-xl bg-slate-50 p-3">
-            <span class="block text-xs text-slate-500">Amount</span>
-            <strong class="mt-1 block text-sm text-slate-900">
-              {{ currency(dialogWithdrawal.amount) }}
-            </strong>
-          </div>
-        </div>
-
-        <div class="mt-3 rounded-xl border border-slate-200 p-3">
-          <span class="block text-xs text-slate-500"
-            >Destination from loan application</span
-          >
-          <strong class="mt-1 block text-sm text-slate-900">
-            {{ dialogWithdrawal.requestedBank?.bankName || "—" }}
-          </strong>
-          <span class="mt-1 block break-all text-sm text-slate-600">
-            {{ dialogWithdrawal.requestedBank?.bankAccountNumber || "—" }}
-          </span>
-        </div>
-
         <form v-if="isOtpStep" class="mt-4" @submit.prevent="verifyOtp">
           <div class="form-field">
             <label>OTP code</label>
             <InputText
-              :model-value="otpCode"
+              v-model="otpCode"
               inputmode="numeric"
               autocomplete="one-time-code"
-              :maxlength="expectedOtpLength"
+              maxlength="8"
               placeholder="Enter OTP"
               class="w-full text-center text-2xl font-bold tracking-[0.3em]"
-              required
               :autofocus="otpReady"
-              @input="updateOtp"
             />
           </div>
 
@@ -812,9 +702,6 @@ onMounted(load);
               type="submit"
               icon="pi pi-check"
               :loading="verifyingOtp"
-              :disabled="
-                !otpReady || otpCode.length !== dialogWithdrawal.otpLength
-              "
             />
           </div>
         </form>
