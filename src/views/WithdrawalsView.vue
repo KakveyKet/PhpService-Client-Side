@@ -1,506 +1,285 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
-import { useConfirm } from "primevue/useconfirm";
-import { useToast } from "primevue/usetoast";
-
-import Button from "primevue/button";
-import Column from "primevue/column";
-import DataTable from "primevue/datatable";
-import Dialog from "primevue/dialog";
-import InputText from "primevue/inputtext";
-import Message from "primevue/message";
-import Select from "primevue/select";
-import Tag from "primevue/tag";
-import Textarea from "primevue/textarea";
-
-import PageHeader from "../components/PageHeader.vue";
-import api from "../services/api.js";
-import { useRealtimeRefresh } from "../composables/useRealtimeRefresh.js";
-
-import { apiError, currency, dateTime, fullName } from "../utils/formatters.js";
+import { onMounted, ref } from 'vue';
+import { useConfirm } from 'primevue/useconfirm';
+import { useToast } from 'primevue/usetoast';
+import Button from 'primevue/button';
+import Column from 'primevue/column';
+import DataTable from 'primevue/datatable';
+import Dialog from 'primevue/dialog';
+import InputText from 'primevue/inputtext';
+import Message from 'primevue/message';
+import Select from 'primevue/select';
+import Tag from 'primevue/tag';
+import Textarea from 'primevue/textarea';
+import PageHeader from '../components/PageHeader.vue';
+import api from '../services/api.js';
+import { useRealtimeRefresh } from '../composables/useRealtimeRefresh.js';
+import {
+  apiError,
+  currency,
+  dateTime,
+  fullName
+} from '../utils/formatters.js';
 
 const toast = useToast();
 const confirm = useConfirm();
-
-/*
-|--------------------------------------------------------------------------
-| Data
-|--------------------------------------------------------------------------
-*/
-
 const items = ref([]);
-const customers = ref([]);
-
 const loading = ref(false);
-
 const reviewVisible = ref(false);
 const selected = ref(null);
-
-/*
-|--------------------------------------------------------------------------
-| Filters
-|--------------------------------------------------------------------------
-*/
-
-const filterSearch = ref("");
-const filterCustomerId = ref(null);
-
-const customerOptions = computed(() => {
-  return customers.value.map((customer) => ({
-    ...customer,
-
-    searchLabel: [fullName(customer), customer.customerCode, customer.phone]
-      .filter(Boolean)
-      .join(" — "),
-  }));
-});
-
-const filteredItems = computed(() => {
-  const query = filterSearch.value.trim().toLowerCase();
-
-  return items.value.filter((item) => {
-    /*
-    |--------------------------------------------------------------------------
-    | Exact customer filter
-    |--------------------------------------------------------------------------
-    */
-
-    if (
-      filterCustomerId.value &&
-      item.customerId?._id !== filterCustomerId.value
-    ) {
-      return false;
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Text search
-    |--------------------------------------------------------------------------
-    */
-
-    if (!query) {
-      return true;
-    }
-
-    const searchableValues = [
-      item.withdrawalNumber,
-
-      fullName(item.customerId),
-
-      item.customerId?.customerCode,
-
-      item.customerId?.phone,
-
-      item.loanId?.loanNumber,
-
-      item.requestedBank?.bankName,
-
-      item.requestedBank?.bankAccountNumber,
-
-      item.status,
-    ];
-
-    return searchableValues.some((value) =>
-      String(value || "")
-        .toLowerCase()
-        .includes(query),
-    );
-  });
-});
-
-/*
-|--------------------------------------------------------------------------
-| Review state
-|--------------------------------------------------------------------------
-*/
-
-const otpLength = ref(6);
-const reviewNote = ref("");
-const rejectionReason = ref("");
-
-const generating = ref(false);
+const withdrawCode = ref('');
+const reviewNote = ref('');
+const rejectionReason = ref('');
+const completedRejectionReason = ref('');
+const settingCode = ref(false);
 const rejecting = ref(false);
-const approving = ref(false);
-
-const generatedOtp = ref("");
-const generatedOtpExpiresAt = ref(null);
-
-/*
-|--------------------------------------------------------------------------
-| Options
-|--------------------------------------------------------------------------
-*/
-
-const otpLengthOptions = [
-  {
-    label: "6 digits",
-    value: 6,
-  },
-  {
-    label: "8 digits",
-    value: 8,
-  },
-];
-
+const rejectingCompleted = ref(false);
 const rejectionReasonOptions = [
-  "WITHDRAWAL WRONG AMOUNT",
-  "WRONG BANK ACCOUNT",
-  "LOW CREDIT",
-  "WRONG INFORMATION",
-  "INSURANCE",
-  "PLATEFORM FEE",
-  "VIP CHANNEL",
-  "NEW DOCUMENT AND NEW OTP CODE",
-  "FREEZE LOAN ACCOUNT",
-  "INLAND REVENUE TAX",
-  "NEED NEW OTP CODE",
+  'WITHDRAWAL WRONG AMOUNT',
+  'WRONG BANK ACCOUNT',
+  'LOW CREDIT',
+  'WRONG INFORMATION',
+  'INSURANCE',
+  'PLATEFORM FEE',
+  'VIP CHANNEL',
+  'NEW DOCUMENT AND NEW OTP CODE',
+  'FREEZE LOAN ACCOUNT',
+  'INLAND REVENUE TAX',
+  'NEED NEW OTP CODE'
 ];
-
-/*
-|--------------------------------------------------------------------------
-| Status helpers
-|--------------------------------------------------------------------------
-*/
 
 function statusLabel(status) {
-  return status?.replaceAll("_", " ") || "UNKNOWN";
+  if (status === 'REFUNDED') return 'REJECTED';
+  if (['WAITING_FOR_OTP', 'OTP_REQUIRED'].includes(status)) {
+    return 'WAITING FOR CODE';
+  }
+  if (status === 'OTP_VERIFIED') return 'NEW CODE REQUIRED';
+  if (['APPROVED', 'COMPLETED'].includes(status)) return 'WITHDRAW SUCCESS';
+  return status?.replaceAll('_', ' ') || 'UNKNOWN';
 }
 
 function statusSeverity(status) {
   const severities = {
-    PENDING_REVIEW: "warn",
-    WAITING_FOR_OTP: "info",
-    OTP_REQUIRED: "info",
-    OTP_VERIFIED: "success",
-    APPROVED: "success",
-    COMPLETED: "success",
-    REJECTED: "danger",
-    EXPIRED: "secondary",
-    CANCELLED: "secondary",
+    PENDING_REVIEW: 'warn',
+    WAITING_FOR_CODE: 'info',
+    WAITING_FOR_OTP: 'info',
+    OTP_REQUIRED: 'info',
+    OTP_VERIFIED: 'success',
+    APPROVED: 'success',
+    COMPLETED: 'success',
+    REFUNDED: 'warn',
+    REJECTED: 'danger',
+    EXPIRED: 'secondary',
+    CANCELLED: 'secondary'
   };
-
-  return severities[status] || "secondary";
+  return severities[status] || 'secondary';
 }
 
 function isOpen(item) {
   return [
-    "PENDING_REVIEW",
-    "WAITING_FOR_OTP",
-    "OTP_REQUIRED",
-    "OTP_VERIFIED",
+    'PENDING_REVIEW',
+    'WAITING_FOR_CODE',
+    'WAITING_FOR_OTP',
+    'OTP_REQUIRED',
+    'OTP_VERIFIED'
   ].includes(item?.status);
 }
 
-function canGenerateOtp(item) {
-  return ["PENDING_REVIEW", "WAITING_FOR_OTP", "OTP_REQUIRED"].includes(
-    item?.status,
-  );
+function canSetWithdrawCode(item) {
+  return [
+    'PENDING_REVIEW',
+    'WAITING_FOR_CODE',
+    'WAITING_FOR_OTP',
+    'OTP_REQUIRED',
+    'OTP_VERIFIED'
+  ].includes(item?.status);
 }
 
-function canApprove(item) {
-  return item?.status === "OTP_VERIFIED";
+function canRejectCompleted(item) {
+  return ['COMPLETED', 'APPROVED'].includes(item?.status);
 }
 
 function canReject(item) {
   return isOpen(item);
 }
 
-/*
-|--------------------------------------------------------------------------
-| Load
-|--------------------------------------------------------------------------
-*/
-
 async function load() {
   loading.value = true;
-
   try {
-    const params = {
-      limit: 100,
-    };
-
-    /*
-    |--------------------------------------------------------------------------
-    | Send customerId too
-    |--------------------------------------------------------------------------
-    |
-    | If your withdrawal backend already supports it,
-    | filtering happens server-side.
-    |
-    | filteredItems still checks customerId client-side.
-    |
-    */
-
-    if (filterCustomerId.value) {
-      params.customerId = filterCustomerId.value;
-    }
-
-    const [withdrawalResponse, customerResponse] = await Promise.all([
-      api.get("/withdrawals", {
-        params,
-      }),
-
-      api.get("/customers", {
-        params: {
-          limit: 100,
-        },
-      }),
-    ]);
-
-    items.value = withdrawalResponse.data.items || [];
-
-    customers.value = customerResponse.data.items || [];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Refresh currently opened item
-    |--------------------------------------------------------------------------
-    */
+    const { data } = await api.get('/withdrawals', { params: { limit: 100 } });
+    items.value = data.items;
 
     if (selected.value) {
-      const refreshed = items.value.find(
-        (item) => item._id === selected.value._id,
-      );
-
+      const refreshed = items.value.find((item) => item._id === selected.value._id);
       if (refreshed) {
         selected.value = refreshed;
-
-        if (refreshed.status === "OTP_VERIFIED") {
-          generatedOtp.value = "";
-
-          generatedOtpExpiresAt.value = null;
-        }
       }
     }
   } catch (error) {
     toast.add({
-      severity: "error",
-      summary: "Cannot load withdrawals",
+      severity: 'error',
+      summary: 'Cannot load withdrawals',
       detail: apiError(error),
-      life: 4000,
+      life: 4000
     });
   } finally {
     loading.value = false;
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Filters
-|--------------------------------------------------------------------------
-*/
-
-function resetFilters() {
-  filterSearch.value = "";
-  filterCustomerId.value = null;
-
-  load();
-}
-
-/*
-|--------------------------------------------------------------------------
-| Review
-|--------------------------------------------------------------------------
-*/
-
 function openReview(item) {
   selected.value = item;
-
-  otpLength.value = item.otpLength || 6;
-
-  reviewNote.value = item.reviewNote || "";
-
-  rejectionReason.value = "";
-
-  generatedOtp.value = "";
-
-  generatedOtpExpiresAt.value = null;
-
+  withdrawCode.value = '';
+  reviewNote.value = item.reviewNote || '';
+  rejectionReason.value = '';
+  completedRejectionReason.value = '';
   reviewVisible.value = true;
 }
 
-/*
-|--------------------------------------------------------------------------
-| OTP
-|--------------------------------------------------------------------------
-*/
+function normalizeWithdrawCode(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/\D/g, '')
+    .slice(0, 8);
+}
 
-async function generateOtp() {
+function updateWithdrawCode(event) {
+  withdrawCode.value = normalizeWithdrawCode(event.target.value);
+}
+
+async function setWithdrawCode() {
   if (!selected.value) return;
-
-  generating.value = true;
+  const code = normalizeWithdrawCode(withdrawCode.value);
+  if (!/^\d{6}$|^\d{8}$/.test(code)) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Complete code required',
+      detail: 'Enter exactly 6 or 8 digits.',
+      life: 3000
+    });
+    return;
+  }
+  settingCode.value = true;
 
   try {
     const { data } = await api.post(
-      `/withdrawals/${selected.value._id}/generate-otp`,
+      `/withdrawals/${selected.value._id}/set-code`,
       {
-        length: otpLength.value,
-        note: reviewNote.value,
-      },
+        code,
+        note: reviewNote.value
+      }
     );
-
     selected.value = data.item;
-
-    generatedOtp.value = data.otp;
-
-    generatedOtpExpiresAt.value = data.expiresAt;
-
+    withdrawCode.value = '';
     toast.add({
-      severity: "success",
-      summary: "OTP generated",
-      detail: "Copy the code now and provide it to the customer securely.",
-      life: 4000,
+      severity: 'success',
+      summary: 'Withdraw code saved',
+      detail: 'Provide the code to the customer securely.',
+      life: 4000
     });
-
     await load();
   } catch (error) {
     toast.add({
-      severity: "error",
-      summary: "Cannot generate OTP",
+      severity: 'error',
+      summary: 'Cannot save withdraw code',
       detail: apiError(error),
-      life: 4500,
+      life: 4500
     });
   } finally {
-    generating.value = false;
+    settingCode.value = false;
   }
 }
-
-async function copyOtp() {
-  if (!generatedOtp.value) return;
-
-  try {
-    await navigator.clipboard.writeText(generatedOtp.value);
-
-    toast.add({
-      severity: "success",
-      summary: "OTP copied",
-      life: 2000,
-    });
-  } catch {
-    toast.add({
-      severity: "warn",
-      summary: "Copy unavailable",
-      detail: "Select and copy the OTP manually.",
-      life: 3000,
-    });
-  }
-}
-
-/*
-|--------------------------------------------------------------------------
-| Reject
-|--------------------------------------------------------------------------
-*/
 
 async function rejectWithdrawal() {
   if (!selected.value) return;
-
   if (!rejectionReason.value.trim()) {
     toast.add({
-      severity: "warn",
-      summary: "Reason required",
-      detail: "Select why the withdrawal is rejected.",
-      life: 3000,
+      severity: 'warn',
+      summary: 'Reason required',
+      detail: 'Select why the withdrawal is rejected.',
+      life: 3000
     });
-
     return;
   }
 
   rejecting.value = true;
-
   try {
     await api.post(`/withdrawals/${selected.value._id}/reject`, {
-      reason: rejectionReason.value.trim(),
+      reason: rejectionReason.value.trim()
     });
-
     reviewVisible.value = false;
-
-    toast.add({
-      severity: "success",
-      summary: "Withdrawal rejected",
-      life: 2500,
-    });
-
+    toast.add({ severity: 'success', summary: 'Withdrawal rejected', life: 2500 });
     await load();
   } catch (error) {
     toast.add({
-      severity: "error",
-      summary: "Cannot reject withdrawal",
+      severity: 'error',
+      summary: 'Cannot reject withdrawal',
       detail: apiError(error),
-      life: 4500,
+      life: 4500
     });
   } finally {
     rejecting.value = false;
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Approve
-|--------------------------------------------------------------------------
-*/
-
-async function approveWithdrawal() {
+async function rejectCompletedWithdrawal() {
   if (!selected.value) return;
-
-  approving.value = true;
+  if (!completedRejectionReason.value.trim()) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Rejection reason required',
+      detail: 'Select why the completed withdrawal must be rejected.',
+      life: 3000
+    });
+    return;
+  }
+  rejectingCompleted.value = true;
 
   try {
-    await api.post(`/withdrawals/${selected.value._id}/approve`, {
-      note: reviewNote.value,
+    await api.post(`/withdrawals/${selected.value._id}/reject-completed`, {
+      reason: completedRejectionReason.value.trim()
     });
-
     reviewVisible.value = false;
-
     toast.add({
-      severity: "success",
-      summary: "Withdrawal approved",
-      detail: "The withdrawal transaction has been completed.",
-      life: 3500,
+      severity: 'success',
+      summary: 'Withdrawal rejected',
+      detail: 'The amount has been returned to the customer wallet.',
+      life: 3500
     });
-
     await load();
   } catch (error) {
     toast.add({
-      severity: "error",
-      summary: "Cannot approve withdrawal",
+      severity: 'error',
+      summary: 'Cannot reject withdrawal',
       detail: apiError(error),
-      life: 4500,
+      life: 4500
     });
   } finally {
-    approving.value = false;
+    rejectingCompleted.value = false;
   }
 }
 
-function confirmApproval() {
+function confirmCompletedRejection() {
   if (!selected.value) return;
-
+  if (!completedRejectionReason.value.trim()) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Rejection reason required',
+      life: 2500
+    });
+    return;
+  }
   confirm.require({
-    header: "Approve withdrawal",
-
-    message:
-      `Approve ${selected.value.withdrawalNumber} ` +
-      `for ${currency(selected.value.amount)}? ` +
-      `This creates the withdrawal transaction and releases the reserved funds.`,
-
-    icon: "pi pi-check-circle",
-
-    acceptLabel: "Approve withdrawal",
-
-    rejectLabel: "Cancel",
-
-    accept: approveWithdrawal,
+    header: 'Reject completed withdrawal',
+    message: `Reject ${selected.value.withdrawalNumber} and return ${currency(selected.value.amount)} to the customer wallet?`,
+    icon: 'pi pi-times-circle',
+    acceptLabel: 'Reject withdrawal',
+    rejectLabel: 'Cancel',
+    accept: rejectCompletedWithdrawal
   });
 }
 
-/*
-|--------------------------------------------------------------------------
-| Realtime
-|--------------------------------------------------------------------------
-*/
-
-useRealtimeRefresh(["withdrawals"], load);
-
+useRealtimeRefresh(['withdrawals'], load);
 onMounted(load);
 </script>
 
@@ -508,7 +287,7 @@ onMounted(load);
   <div>
     <PageHeader
       title="Withdrawals"
-      subtitle="Review withdrawal requests, issue secure one-time passwords and approve verified requests."
+      subtitle="Review requests, set customer withdraw codes and reject completed withdrawals when needed."
     >
       <Button
         label="Refresh"
@@ -520,176 +299,58 @@ onMounted(load);
     </PageHeader>
 
     <Message class="mb-5" severity="warn" :closable="false">
-      The destination bank details are copied from the customer's loan
-      application. Review them before generating an OTP, and reject the request
-      if the saved information is not valid.
+      Review the saved bank details before setting a withdraw code. A correct customer code completes the withdrawal immediately.
     </Message>
 
     <section class="table-card">
-      <!-- Filters -->
-      <div
-        class="mb-5 flex flex-wrap items-end gap-3 border-b border-slate-100 pb-5"
-      >
-        <!-- Search -->
-        <div class="min-w-[220px] flex-1">
-          <label class="mb-2 block text-sm font-semibold text-slate-700">
-            Search customer
-          </label>
-
-          <span class="p-input-icon-left w-full">
-            <i class="pi pi-search" />
-
-            <InputText
-              v-model="filterSearch"
-              fluid
-              placeholder="Name, code, phone, withdrawal..."
-            />
-          </span>
-        </div>
-
-        <!-- Customer -->
-        <div class="min-w-[240px] flex-1">
-          <label class="mb-2 block text-sm font-semibold text-slate-700">
-            Customer
-          </label>
-
-          <Select
-            v-model="filterCustomerId"
-            :options="customerOptions"
-            option-label="searchLabel"
-            option-value="_id"
-            filter
-            show-clear
-            fluid
-            placeholder="All customers"
-          >
-            <template #option="{ option }">
-              <div>
-                <strong class="block text-sm">
-                  {{ fullName(option) }}
-                </strong>
-
-                <small class="text-slate-500">
-                  {{ option.customerCode }}
-
-                  <template v-if="option.phone">
-                    — {{ option.phone }}
-                  </template>
-                </small>
-              </div>
-            </template>
-
-            <template #value="{ value, placeholder }">
-              <span v-if="value">
-                {{
-                  fullName(customers.find((customer) => customer._id === value))
-                }}
-              </span>
-
-              <span v-else>
-                {{ placeholder }}
-              </span>
-            </template>
-          </Select>
-        </div>
-
-        <div class="flex gap-2">
-          <Button
-            label="Filter"
-            icon="pi pi-filter"
-            :loading="loading"
-            @click="load"
-          />
-
-          <Button
-            label="Reset"
-            icon="pi pi-refresh"
-            severity="secondary"
-            outlined
-            @click="resetFilters"
-          />
-        </div>
-      </div>
-
-      <!-- Table -->
       <DataTable
-        :value="filteredItems"
+        :value="items"
         :loading="loading"
         striped-rows
         paginator
         :rows="10"
-        :rows-per-page-options="[10, 20, 50]"
         responsive-layout="scroll"
       >
         <template #empty>
           <div class="empty-state">
             <i class="pi pi-money-bill" />
-
             No withdrawal requests found.
           </div>
         </template>
 
         <Column field="withdrawalNumber" header="Withdrawal" sortable>
           <template #body="{ data }">
-            <strong>
-              {{ data.withdrawalNumber }}
-            </strong>
-
-            <small class="table-subtext">
-              {{ dateTime(data.createdAt) }}
-            </small>
+            <strong>{{ data.withdrawalNumber }}</strong>
+            <small class="table-subtext">{{ dateTime(data.createdAt) }}</small>
           </template>
         </Column>
-
         <Column header="Customer">
           <template #body="{ data }">
-            <strong class="block">
-              {{ fullName(data.customerId) }}
-            </strong>
-
-            <small class="table-subtext">
-              {{ data.customerId?.customerCode }}
-            </small>
+            {{ fullName(data.customerId) }}
+            <small class="table-subtext">{{ data.customerId?.customerCode }}</small>
           </template>
         </Column>
-
         <Column header="Loan">
-          <template #body="{ data }">
-            {{ data.loanId?.loanNumber || "—" }}
-          </template>
+          <template #body="{ data }">{{ data.loanId?.loanNumber }}</template>
         </Column>
-
         <Column header="Amount">
           <template #body="{ data }">
-            <strong>
-              {{ currency(data.amount) }}
-            </strong>
+            <strong>{{ currency(data.amount) }}</strong>
           </template>
         </Column>
-
         <Column header="Destination bank">
           <template #body="{ data }">
             <div>
-              <strong class="block text-sm">
-                {{ data.requestedBank?.bankName || "—" }}
-              </strong>
-
-              <small class="table-subtext">
-                {{ data.requestedBank?.bankAccountNumber || "—" }}
-              </small>
+              <strong class="block text-sm">{{ data.requestedBank?.bankName || '—' }}</strong>
+              <small class="table-subtext">{{ data.requestedBank?.bankAccountNumber || '—' }}</small>
             </div>
           </template>
         </Column>
-
         <Column header="Status">
           <template #body="{ data }">
-            <Tag
-              :value="statusLabel(data.status)"
-              :severity="statusSeverity(data.status)"
-            />
+            <Tag :value="statusLabel(data.status)" :severity="statusSeverity(data.status)" />
           </template>
         </Column>
-
         <Column header="">
           <template #body="{ data }">
             <div class="flex justify-end">
@@ -706,42 +367,29 @@ onMounted(load);
       </DataTable>
     </section>
 
-    <!-- Review dialog -->
     <Dialog
       v-model:visible="reviewVisible"
       modal
       :header="selected?.withdrawalNumber || 'Withdrawal review'"
-      :style="{
-        width: '760px',
-        maxWidth: '96vw',
-      }"
-      @hide="generatedOtp = ''"
+      :style="{ width: '760px', maxWidth: '96vw' }"
+      @hide="withdrawCode = ''"
     >
       <template v-if="selected">
         <div class="mb-5 grid gap-3 sm:grid-cols-3">
           <div class="rounded-xl bg-slate-50 p-3">
-            <span class="block text-xs text-slate-500"> Customer </span>
-
+            <span class="block text-xs text-slate-500">Customer</span>
             <strong class="mt-1 block text-sm text-slate-900">
               {{ fullName(selected.customerId) }}
             </strong>
-
-            <small class="mt-1 block text-xs text-slate-500">
-              {{ selected.customerId?.customerCode }}
-            </small>
           </div>
-
           <div class="rounded-xl bg-slate-50 p-3">
-            <span class="block text-xs text-slate-500"> Amount </span>
-
+            <span class="block text-xs text-slate-500">Amount</span>
             <strong class="mt-1 block text-sm text-slate-900">
               {{ currency(selected.amount) }}
             </strong>
           </div>
-
           <div class="rounded-xl bg-slate-50 p-3">
-            <span class="block text-xs text-slate-500"> Status </span>
-
+            <span class="block text-xs text-slate-500">Status</span>
             <Tag
               class="mt-1"
               :value="statusLabel(selected.status)"
@@ -750,106 +398,47 @@ onMounted(load);
           </div>
         </div>
 
-        <h3 class="mb-3 font-bold text-slate-900">
-          Destination from loan application
-        </h3>
-
+        <h3 class="mb-3 font-bold text-slate-900">Destination from loan application</h3>
         <div class="overflow-hidden rounded-xl border border-slate-200">
-          <div
-            class="grid grid-cols-[120px_1fr] gap-3 bg-slate-50 p-3 text-xs font-bold uppercase tracking-wide text-slate-500"
-          >
+          <div class="grid grid-cols-[120px_1fr] gap-3 bg-slate-50 p-3 text-xs font-bold uppercase tracking-wide text-slate-500">
             <span>Field</span>
-            <span> Saved information </span>
+            <span>Saved information</span>
           </div>
-
-          <div
-            class="grid grid-cols-[120px_1fr] gap-3 border-t border-slate-100 p-3 text-sm"
-          >
-            <strong> Bank name </strong>
-
-            <span class="break-words">
-              {{ selected.requestedBank?.bankName || "—" }}
-            </span>
+          <div class="grid grid-cols-[120px_1fr] gap-3 border-t border-slate-100 p-3 text-sm">
+            <strong>Bank name</strong>
+            <span class="break-words">{{ selected.requestedBank?.bankName || '—' }}</span>
           </div>
-
-          <div
-            class="grid grid-cols-[120px_1fr] gap-3 border-t border-slate-100 p-3 text-sm"
-          >
-            <strong> Account </strong>
-
-            <span class="break-all">
-              {{ selected.requestedBank?.bankAccountNumber || "—" }}
-            </span>
+          <div class="grid grid-cols-[120px_1fr] gap-3 border-t border-slate-100 p-3 text-sm">
+            <strong>Account</strong>
+            <span class="break-all">{{ selected.requestedBank?.bankAccountNumber || '—' }}</span>
           </div>
         </div>
 
-        <Message
-          v-if="generatedOtp"
-          class="mt-5"
-          severity="success"
-          :closable="false"
-        >
-          <div>
-            <strong class="block">
-              Provide this OTP to the customer now
-            </strong>
-
-            <div class="mt-3 flex items-center gap-3">
-              <code
-                class="rounded-lg bg-white px-4 py-2 text-2xl font-bold tracking-[0.25em] text-emerald-800"
-              >
-                {{ generatedOtp }}
-              </code>
-
-              <Button
-                label="Copy"
-                icon="pi pi-copy"
-                size="small"
-                @click="copyOtp"
-              />
-            </div>
-
-            <small class="mt-2 block">
-              Expires
-              {{ dateTime(generatedOtpExpiresAt) }}.
-            </small>
-          </div>
-        </Message>
-
         <template v-if="isOpen(selected)">
           <div class="mt-5 grid gap-4 sm:grid-cols-2">
-            <div v-if="canGenerateOtp(selected)" class="form-field">
-              <label> OTP length </label>
-
-              <Select
-                v-model="otpLength"
-                :options="otpLengthOptions"
-                option-label="label"
-                option-value="value"
-                fluid
+            <div v-if="canSetWithdrawCode(selected)" class="form-field">
+              <label>Withdraw code *</label>
+              <InputText
+                :model-value="withdrawCode"
+                inputmode="numeric"
+                autocomplete="off"
+                maxlength="8"
+                placeholder="Enter 6 or 8 digits"
+                class="w-full font-mono text-lg tracking-[0.2em]"
+                @input="updateWithdrawCode"
               />
+              <small>Create the code yourself and send it to the customer. It expires after 10 minutes.</small>
             </div>
-
-            <div
-              class="form-field"
-              :class="{
-                'sm:col-span-2': !canGenerateOtp(selected),
-              }"
-            >
-              <label> Review note </label>
-
+            <div class="form-field" :class="{ 'sm:col-span-2': !canSetWithdrawCode(selected) }">
+              <label>Review note</label>
               <Textarea v-model="reviewNote" rows="2" maxlength="500" />
             </div>
           </div>
 
-          <div
-            v-if="canReject(selected)"
-            class="mt-5 rounded-xl border border-red-100 bg-red-50 p-4"
-          >
+          <div v-if="canReject(selected)" class="mt-5 rounded-xl border border-red-100 bg-red-50 p-4">
             <label class="mb-2 block text-sm font-semibold text-red-800">
               Rejection reason
             </label>
-
             <Select
               v-model="rejectionReason"
               :options="rejectionReasonOptions"
@@ -858,16 +447,34 @@ onMounted(load);
             />
           </div>
         </template>
+
+        <div
+          v-if="canRejectCompleted(selected)"
+          class="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4"
+        >
+          <label class="mb-2 block text-sm font-semibold text-amber-900">
+            Rejection reason
+          </label>
+          <Select
+            v-model="completedRejectionReason"
+            :options="rejectionReasonOptions"
+            placeholder="Select rejection reason"
+            fluid
+          />
+        </div>
+
+        <Message
+          v-if="selected.rejectedAfterCompletionAt || selected.refundedAt || selected.status === 'REFUNDED'"
+          class="mt-5"
+          severity="warn"
+          :closable="false"
+        >
+          Rejected: {{ selected.rejectionReason || selected.refundReason || 'No reason recorded' }}
+        </Message>
       </template>
 
       <template #footer>
-        <Button
-          label="Close"
-          severity="secondary"
-          text
-          @click="reviewVisible = false"
-        />
-
+        <Button label="Close" severity="secondary" text @click="reviewVisible = false" />
         <Button
           v-if="canReject(selected)"
           label="Reject"
@@ -877,26 +484,20 @@ onMounted(load);
           :loading="rejecting"
           @click="rejectWithdrawal"
         />
-
         <Button
-          v-if="canApprove(selected)"
-          label="Approve withdrawal"
-          icon="pi pi-check"
-          severity="success"
-          :loading="approving"
-          @click="confirmApproval"
+          v-if="canRejectCompleted(selected)"
+          label="Reject"
+          icon="pi pi-times"
+          severity="danger"
+          :loading="rejectingCompleted"
+          @click="confirmCompletedRejection"
         />
-
         <Button
-          v-if="canGenerateOtp(selected)"
-          :label="
-            ['WAITING_FOR_OTP', 'OTP_REQUIRED'].includes(selected?.status)
-              ? 'Generate new OTP'
-              : 'Generate OTP'
-          "
+          v-if="canSetWithdrawCode(selected)"
+          :label="selected?.status === 'PENDING_REVIEW' ? 'Set withdraw code' : 'Replace withdraw code'"
           icon="pi pi-key"
-          :loading="generating"
-          @click="generateOtp"
+          :loading="settingCode"
+          @click="setWithdrawCode"
         />
       </template>
     </Dialog>

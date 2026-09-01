@@ -3,7 +3,6 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import Button from "primevue/button";
-import Tag from "primevue/tag";
 import api from "../../services/api.js";
 import { useAuthStore } from "../../stores/auth.js";
 import { useRealtimeRefresh } from "../../composables/useRealtimeRefresh.js";
@@ -105,47 +104,6 @@ onMounted(load);
     </template>
 
     <template v-else-if="customer">
-      <!-- Customer credit -->
-      <section
-        class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-      >
-        <div class="flex items-center gap-3">
-          <div
-            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600"
-          >
-            <i class="pi pi-star-fill" />
-          </div>
-
-          <div class="min-w-0 flex-1">
-            <span
-              class="block text-xs font-semibold uppercase tracking-wide text-slate-500"
-            >
-              Customer credit
-            </span>
-            <div class="mt-1 flex items-center gap-2">
-              <strong class="text-2xl text-slate-900">{{
-                credit.score
-              }}</strong>
-              <!-- <Tag :value="credit.label" :severity="credit.severity" /> -->
-            </div>
-          </div>
-        </div>
-
-        <div class="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
-          <div
-            class="h-full rounded-full bg-amber-400 transition-all duration-500"
-            :style="{ width: `${credit.progress}%` }"
-          />
-        </div>
-
-        <small class="mt-2 block text-slate-500">
-          <template v-if="credit.nextScore">
-            Next level: {{ credit.nextLabel }} at {{ credit.nextScore }} points
-          </template>
-          <template v-else>Highest credit level reached</template>
-        </small>
-      </section>
-
       <!-- Customer identity -->
       <section
         class="relative overflow-hidden rounded-2xl bg-emerald-600 p-5 text-white shadow-sm"
@@ -180,7 +138,35 @@ onMounted(load);
           class="absolute -right-4 -top-12 h-24 w-24 rounded-full bg-white/10"
         />
       </section>
+      <section
+        class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+      >
+        <div class="flex flex-col items-center text-center">
+          <!-- <span
+            class="mb-3 text-xs font-bold uppercase tracking-[0.16em] text-emerald-700"
+          >
+            Customer credit
+          </span> -->
 
+          <div
+            class="credit-gauge"
+            :style="{ '--credit-angle': `${credit.progress * 3.6}deg` }"
+          >
+            <div class="credit-gauge__ticks" />
+            <div class="credit-gauge__center">
+              <strong>{{ credit.score }}</strong>
+              <span> Credit</span>
+            </div>
+          </div>
+
+          <!-- <small class="mt-3 text-slate-500">
+            <template v-if="credit.nextScore">
+              Update to {{ credit.nextScore }} points
+            </template>
+            <template v-else>Highest credit level reached</template>
+          </small> -->
+        </div>
+      </section>
       <!-- Account summary -->
       <section class="grid grid-cols-2 gap-3">
         <article
@@ -295,13 +281,6 @@ onMounted(load);
         </header>
 
         <div class="divide-y divide-slate-100 px-4">
-          <!-- <div class="flex items-start justify-between gap-4 py-3.5">
-            <span class="text-sm text-slate-500">Account holder</span>
-            <strong class="break-all text-right text-sm text-slate-800">
-              {{ customer.maskedBankDetails?.accountHolderName || '—' }}
-            </strong>
-          </div> -->
-
           <div class="flex items-start justify-between gap-4 py-3.5">
             <span class="text-sm text-slate-500">Bank name</span>
             <strong class="text-right text-sm text-slate-800">
@@ -340,3 +319,79 @@ onMounted(load);
     </div>
   </div>
 </template>
+
+<style scoped>
+.credit-gauge {
+  --credit-angle: 0deg;
+  position: relative;
+  display: grid;
+  width: 10rem;
+  height: 10rem;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 210deg,
+    #6ee7b7 0deg,
+    #10b981 var(--credit-angle),
+    #064e3b var(--credit-angle),
+    #064e3b 360deg
+  );
+  box-shadow:
+    0 12px 25px rgba(6, 78, 59, 0.22),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.22);
+}
+
+.credit-gauge::before {
+  position: absolute;
+  inset: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: inherit;
+  content: "";
+}
+
+.credit-gauge__ticks {
+  position: absolute;
+  inset: 0.8rem;
+  border-radius: inherit;
+  background: repeating-conic-gradient(
+    from 210deg,
+    rgba(255, 255, 255, 0.45) 0deg 1.5deg,
+    transparent 1.5deg 10deg
+  );
+  -webkit-mask: radial-gradient(
+    circle,
+    transparent 62%,
+    #000 63% 68%,
+    transparent 69%
+  );
+  mask: radial-gradient(circle, transparent 62%, #000 63% 68%, transparent 69%);
+}
+
+.credit-gauge__center {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 7.4rem;
+  height: 7.4rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: linear-gradient(145deg, #047857, #065f46);
+  color: white;
+  box-shadow: inset 0 0 18px rgba(0, 0, 0, 0.16);
+}
+
+.credit-gauge__center strong {
+  font-size: 2.25rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.credit-gauge__center span {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: #d1fae5;
+}
+</style>
