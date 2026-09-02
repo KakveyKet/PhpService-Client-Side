@@ -1,273 +1,111 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from "vue";
-import { useToast } from "primevue/usetoast";
-import Button from "primevue/button";
-import Column from "primevue/column";
-import DataTable from "primevue/datatable";
-import DatePicker from "primevue/datepicker";
-import Dialog from "primevue/dialog";
-import InputNumber from "primevue/inputnumber";
-import InputText from "primevue/inputtext";
-import Select from "primevue/select";
-import Tag from "primevue/tag";
-import Textarea from "primevue/textarea";
-
-import PageHeader from "../components/PageHeader.vue";
-import api from "../services/api.js";
-import { useAuthStore } from "../stores/auth.js";
-import { useRealtimeRefresh } from "../composables/useRealtimeRefresh.js";
-
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useToast } from 'primevue/usetoast';
+import Button from 'primevue/button';
+import Column from 'primevue/column';
+import DataTable from 'primevue/datatable';
+import DatePicker from 'primevue/datepicker';
+import Dialog from 'primevue/dialog';
+import InputNumber from 'primevue/inputnumber';
+import InputText from 'primevue/inputtext';
+import Select from 'primevue/select';
+import Tag from 'primevue/tag';
+import Textarea from 'primevue/textarea';
+import PageHeader from '../components/PageHeader.vue';
+import api from '../services/api.js';
+import { useAuthStore } from '../stores/auth.js';
+import { useRealtimeRefresh } from '../composables/useRealtimeRefresh.js';
+import { apiError, currency, date, fullName, numberValue, statusSeverity } from '../utils/formatters.js';
 import {
-  apiError,
-  currency,
-  date,
-  fullName,
-  numberValue,
-  statusSeverity,
-} from "../utils/formatters.js";
+  datePeriodOptions,
+  matchesCustomerSearch,
+  matchesDatePeriod
+} from '../utils/tableFilters.js';
 
 const auth = useAuthStore();
 const toast = useToast();
-
 const items = ref([]);
 const customers = ref([]);
 const products = ref([]);
-
 const loading = ref(false);
 const saving = ref(false);
-
 const createVisible = ref(false);
 const reviewVisible = ref(false);
 const planVisible = ref(false);
-
 const selected = ref(null);
-
-/*
-|--------------------------------------------------------------------------
-| Filters
-|--------------------------------------------------------------------------
-*/
-
-const filterSearch = ref("");
-const filterCustomerId = ref(null);
-
-function defaultDateRange() {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-
-  const start = new Date(end);
-  start.setDate(start.getDate() - 6);
-  start.setHours(0, 0, 0, 0);
-
-  return [start, end];
-}
-
-const filterDateRange = ref(defaultDateRange());
-
-const customerOptions = computed(() => {
-  return customers.value.map((customer) => ({
-    ...customer,
-    searchLabel: [fullName(customer), customer.customerCode, customer.phone]
-      .filter(Boolean)
-      .join(" — "),
-  }));
-});
-
-const filteredItems = computed(() => {
-  const query = filterSearch.value.trim().toLowerCase();
-
-  return items.value.filter((item) => {
-    /*
-    |--------------------------------------------------------------------------
-    | Exact selected customer
-    |--------------------------------------------------------------------------
-    |
-    | This is also sent to the backend, but keeping this here gives us
-    | consistent client-side filtering.
-    |
-    */
-
-    if (
-      !auth.isCustomer &&
-      filterCustomerId.value &&
-      item.customerId?._id !== filterCustomerId.value
-    ) {
-      return false;
-    }
-
-    if (!query) {
-      return true;
-    }
-
-    const searchableValues = [
-      item.applicationNumber,
-      fullName(item.customerId),
-      item.customerId?.customerCode,
-      item.customerId?.phone,
-      item.productId?.name,
-      item.status,
-    ];
-
-    return searchableValues.some((value) =>
-      String(value || "")
-        .toLowerCase()
-        .includes(query),
-    );
-  });
-});
-
-/*
-|--------------------------------------------------------------------------
-| Forms
-|--------------------------------------------------------------------------
-*/
-
+const filterSearch = ref('');
+const filterPeriod = ref('ALL');
+const filterDateRange = ref(null);
 const form = reactive({
   customerId: null,
   productId: null,
   requestedAmount: 0,
   requestedTerm: 3,
-  purpose: "",
+  purpose: '',
   monthlyIncome: 0,
   monthlyExpense: 0,
-  collateralDescription: "",
+  collateralDescription: ''
 });
-
 const reviewForm = reactive({
-  decision: "APPROVED",
+  decision: 'APPROVED',
   approvedAmount: 0,
   approvedTerm: 3,
   startDate: new Date(),
-  comment: "",
+  comment: ''
 });
-
 const planForm = reactive({
   requestedAmount: 0,
   requestedTerm: 6,
-  comment: "",
+  comment: ''
 });
-
 const customerTermOptions = [6, 12, 24, 36, 48];
 
-/*
-|--------------------------------------------------------------------------
-| Computed
-|--------------------------------------------------------------------------
-*/
+const selectedProduct = computed(() =>
+  products.value.find((product) => product._id === form.productId)
+);
+const planProduct = computed(() => selected.value?.productId || null);
 
-const selectedProduct = computed(() => {
-  return products.value.find((product) => product._id === form.productId);
+const filteredItems = computed(() => {
+  return items.value.filter((item) => {
+    const submittedAt = item.submittedAt || item.createdAt;
+    return matchesCustomerSearch(item.customerId, filterSearch.value) &&
+      matchesDatePeriod(submittedAt, filterPeriod.value, filterDateRange.value);
+  });
 });
-
-const planProduct = computed(() => {
-  return selected.value?.productId || null;
-});
-
-/*
-|--------------------------------------------------------------------------
-| API params
-|--------------------------------------------------------------------------
-*/
-
-function applicationParams() {
-  const params = {
-    limit: 100,
-  };
-
-  const [selectedFrom, selectedTo] = filterDateRange.value || [];
-
-  if (!auth.isCustomer && filterCustomerId.value) {
-    params.customerId = filterCustomerId.value;
-  }
-
-  if (selectedFrom) {
-    const dateFrom = new Date(selectedFrom);
-    dateFrom.setHours(0, 0, 0, 0);
-
-    params.dateFrom = dateFrom.toISOString();
-  }
-
-  if (selectedTo) {
-    const dateTo = new Date(selectedTo);
-    dateTo.setHours(23, 59, 59, 999);
-
-    params.dateTo = dateTo.toISOString();
-  }
-
-  return params;
-}
-
-/*
-|--------------------------------------------------------------------------
-| Load
-|--------------------------------------------------------------------------
-*/
 
 async function load() {
   loading.value = true;
-
   try {
     const requests = [
-      api.get("/loan-applications", {
-        params: applicationParams(),
-      }),
-
-      api.get("/products", {
-        params: {
-          status: "ACTIVE",
-        },
-      }),
+      api.get('/loan-applications', { params: { limit: 1000 } }),
+      api.get('/products', { params: { status: 'ACTIVE' } })
     ];
 
     if (!auth.isCustomer) {
-      requests.push(
-        api.get("/customers", {
-          params: {
-            limit: 100,
-          },
-        }),
-      );
+      requests.push(api.get('/customers', { params: { limit: 1000 } }));
     }
 
-    const [applicationResponse, productResponse, customerResponse] =
-      await Promise.all(requests);
-
-    items.value = applicationResponse.data.items || [];
-
-    products.value = productResponse.data.items || [];
-
-    customers.value = customerResponse?.data?.items || [];
+    const [applicationResponse, productResponse, customerResponse] = await Promise.all(requests);
+    items.value = applicationResponse.data.items;
+    products.value = productResponse.data.items;
+    customers.value = customerResponse?.data.items || [];
   } catch (error) {
     toast.add({
-      severity: "error",
-      summary: "Cannot load applications",
+      severity: 'error',
+      summary: 'Cannot load applications',
       detail: apiError(error),
-      life: 4000,
+      life: 4000
     });
   } finally {
     loading.value = false;
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Filters
-|--------------------------------------------------------------------------
-*/
-
 function resetFilters() {
-  filterSearch.value = "";
-  filterCustomerId.value = null;
-  filterDateRange.value = defaultDateRange();
-
-  load();
+  filterSearch.value = '';
+  filterPeriod.value = 'ALL';
+  filterDateRange.value = null;
 }
-
-/*
-|--------------------------------------------------------------------------
-| Create application
-|--------------------------------------------------------------------------
-*/
 
 function openCreate() {
   Object.assign(form, {
@@ -275,71 +113,48 @@ function openCreate() {
     productId: products.value[0]?._id || null,
     requestedAmount: 0,
     requestedTerm: 3,
-    purpose: "",
+    purpose: '',
     monthlyIncome: 0,
     monthlyExpense: 0,
-    collateralDescription: "",
+    collateralDescription: ''
   });
-
   applyProductDefaults();
-
   createVisible.value = true;
 }
 
 function applyProductDefaults() {
   const product = selectedProduct.value;
-
   if (!product) return;
-
   form.requestedAmount = numberValue(product.minimumAmount);
-
   form.requestedTerm = product.minimumTerm;
 }
 
 async function submitApplication() {
   saving.value = true;
-
   try {
-    await api.post("/loan-applications", form);
-
-    toast.add({
-      severity: "success",
-      summary: "Application submitted",
-      life: 2500,
-    });
-
+    await api.post('/loan-applications', form);
+    toast.add({ severity: 'success', summary: 'Application submitted', life: 2500 });
     createVisible.value = false;
-
     await load();
   } catch (error) {
     toast.add({
-      severity: "error",
-      summary: "Submission failed",
+      severity: 'error',
+      summary: 'Submission failed',
       detail: apiError(error),
-      life: 4000,
+      life: 4000
     });
   } finally {
     saving.value = false;
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Application plan
-|--------------------------------------------------------------------------
-*/
-
 function openPlan(item) {
   selected.value = item;
-
   Object.assign(planForm, {
     requestedAmount: numberValue(item.requestedAmount),
-
     requestedTerm: Number(item.requestedTerm),
-
-    comment: "",
+    comment: ''
   });
-
   planVisible.value = true;
 }
 
@@ -347,180 +162,91 @@ async function savePlan() {
   if (!selected.value) return;
 
   saving.value = true;
-
   try {
     await api.patch(`/loan-applications/${selected.value._id}/plan`, planForm);
-
     toast.add({
-      severity: "success",
-      summary: "Application plan updated",
-      life: 2500,
+      severity: 'success',
+      summary: 'Application plan updated',
+      life: 2500
     });
-
     planVisible.value = false;
-
     await load();
   } catch (error) {
     toast.add({
-      severity: "error",
-      summary: "Plan update failed",
+      severity: 'error',
+      summary: 'Plan update failed',
       detail: apiError(error),
-      life: 4500,
+      life: 4500
     });
   } finally {
     saving.value = false;
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Review
-|--------------------------------------------------------------------------
-*/
-
-function openReview(item, decision = "APPROVED") {
+function openReview(item, decision = 'APPROVED') {
   selected.value = item;
-
   Object.assign(reviewForm, {
     decision,
-
     approvedAmount: numberValue(item.requestedAmount),
-
     approvedTerm: item.requestedTerm,
-
     startDate: new Date(),
-
-    comment: "",
+    comment: ''
   });
-
   reviewVisible.value = true;
 }
 
 async function submitReview() {
-  if (!selected.value) return;
-
   saving.value = true;
-
   try {
-    await api.post(
-      `/loan-applications/${selected.value._id}/review`,
-      reviewForm,
-    );
-
+    await api.post(`/loan-applications/${selected.value._id}/review`, reviewForm);
     toast.add({
-      severity: "success",
+      severity: 'success',
       summary: `Application ${reviewForm.decision.toLowerCase()}`,
-      life: 2500,
+      life: 2500
     });
-
     reviewVisible.value = false;
-
     await load();
   } catch (error) {
-    toast.add({
-      severity: "error",
-      summary: "Review failed",
-      detail: apiError(error),
-      life: 4000,
-    });
+    toast.add({ severity: 'error', summary: 'Review failed', detail: apiError(error), life: 4000 });
   } finally {
     saving.value = false;
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Realtime
-|--------------------------------------------------------------------------
-*/
-
-useRealtimeRefresh(["applications"], load);
-
+useRealtimeRefresh(['applications'], load);
 onMounted(load);
 </script>
 
 <template>
   <div>
-    <PageHeader
-      title="Loan applications"
-      subtitle="Requests awaiting review and approved loan creation."
-    >
+    <PageHeader title="Loan applications" subtitle="Requests awaiting review and approved loan creation.">
       <Button label="New application" icon="pi pi-plus" @click="openCreate" />
     </PageHeader>
 
     <section class="table-card">
-      <!-- Filters -->
-      <div
-        class="mb-5 flex flex-wrap items-end gap-3 border-b border-slate-100 pb-5"
-      >
-        <!-- Search -->
-        <div v-if="!auth.isCustomer" class="min-w-[220px] flex-1">
-          <label class="mb-2 block text-sm font-semibold text-slate-700">
-            Search customer
-          </label>
-
-          <span class="p-input-icon-left w-full">
-            <i class="pi pi-search" />
-
-            <InputText
-              v-model="filterSearch"
-              fluid
-              placeholder="Name, customer code, phone..."
-            />
-          </span>
-        </div>
-
-        <!-- Customer -->
+      <div class="flex flex-wrap items-end gap-3 border-b border-slate-100 p-4">
         <div v-if="!auth.isCustomer" class="min-w-[240px] flex-1">
-          <label class="mb-2 block text-sm font-semibold text-slate-700">
-            Customer
-          </label>
-
-          <Select
-            v-model="filterCustomerId"
-            :options="customerOptions"
-            option-label="searchLabel"
-            option-value="_id"
-            filter
-            show-clear
-            fluid
-            placeholder="All customers"
-          >
-            <template #option="{ option }">
-              <div>
-                <strong class="block text-sm">
-                  {{ fullName(option) }}
-                </strong>
-
-                <small class="text-slate-500">
-                  {{ option.customerCode }}
-                  <template v-if="option.phone">
-                    — {{ option.phone }}
-                  </template>
-                </small>
-              </div>
-            </template>
-
-            <template #value="{ value, placeholder }">
-              <span v-if="value">
-                {{
-                  fullName(customers.find((customer) => customer._id === value))
-                }}
-              </span>
-
-              <span v-else>
-                {{ placeholder }}
-              </span>
-            </template>
-          </Select>
+          <label class="mb-2 block text-sm font-semibold text-slate-700">Customer or username</label>
+          <InputText
+            v-model="filterSearch"
+            class="w-full"
+            placeholder="Search name, username, code or phone"
+          />
         </div>
 
-        <!-- Date -->
-        <div class="min-w-[250px] flex-1">
-          <label class="mb-2 block text-sm font-semibold text-slate-700">
-            Submitted date
-          </label>
+        <div class="min-w-[190px]">
+          <label class="mb-2 block text-sm font-semibold text-slate-700">Date period</label>
+          <Select
+            v-model="filterPeriod"
+            :options="datePeriodOptions"
+            option-label="label"
+            option-value="value"
+            fluid
+          />
+        </div>
 
+        <div v-if="filterPeriod === 'CUSTOM'" class="min-w-[260px] flex-1">
+          <label class="mb-2 block text-sm font-semibold text-slate-700">Date range</label>
           <DatePicker
             v-model="filterDateRange"
             selection-mode="range"
@@ -528,277 +254,95 @@ onMounted(load);
             date-format="M dd, yy"
             show-icon
             fluid
-            placeholder="Select date range"
+            placeholder="Start date - End date"
           />
         </div>
 
-        <div class="flex gap-2">
-          <Button
-            label="Filter"
-            icon="pi pi-filter"
-            :loading="loading"
-            @click="load"
-          />
-
-          <Button
-            label="Reset"
-            icon="pi pi-refresh"
-            severity="secondary"
-            outlined
-            @click="resetFilters"
-          />
-        </div>
+        <Button label="Reset" icon="pi pi-filter-slash" severity="secondary" outlined @click="resetFilters" />
       </div>
 
-      <!-- Table -->
-      <DataTable
-        :value="filteredItems"
-        :loading="loading"
-        striped-rows
-        paginator
-        :rows="10"
-        :rows-per-page-options="[10, 20, 50]"
-        responsive-layout="scroll"
-      >
+      <DataTable :value="filteredItems" :loading="loading" striped-rows paginator :rows="10" responsive-layout="scroll">
         <template #empty>
-          <div class="empty-state">
-            <i class="pi pi-file-edit" />
-            No applications found.
-          </div>
+          <div class="empty-state"><i class="pi pi-file-edit" />No applications found.</div>
         </template>
-
         <Column field="applicationNumber" header="Application" sortable />
-
         <Column v-if="!auth.isCustomer" header="Customer">
           <template #body="{ data }">
-            <strong class="block">
-              {{ fullName(data.customerId) }}
-            </strong>
-
-            <small class="table-subtext">
-              {{ data.customerId?.customerCode }}
-            </small>
+            {{ fullName(data.customerId) }}
+            <small class="table-subtext">{{ data.customerId?.customerCode }}</small>
           </template>
         </Column>
-
-        <Column header="Product">
-          <template #body="{ data }">
-            {{ data.productId?.name }}
-          </template>
-        </Column>
-
+        <Column header="Product"><template #body="{ data }">{{ data.productId?.name }}</template></Column>
         <Column header="Requested">
           <template #body="{ data }">
-            <strong>
-              {{ currency(data.requestedAmount) }}
-            </strong>
-
+            <strong>{{ currency(data.requestedAmount) }}</strong>
             <small class="table-subtext">
-              {{ data.requestedTerm }}
-              {{ data.productId?.termUnit?.toLowerCase() }}(s)
+              {{ data.requestedTerm }} {{ data.productId?.termUnit?.toLowerCase() }}(s)
             </small>
           </template>
         </Column>
-
-        <Column header="Submitted">
-          <template #body="{ data }">
-            {{ date(data.submittedAt) }}
-          </template>
-        </Column>
-
+        <Column header="Submitted"><template #body="{ data }">{{ date(data.submittedAt) }}</template></Column>
         <Column header="Status">
-          <template #body="{ data }">
-            <Tag :value="data.status" :severity="statusSeverity(data.status)" />
-          </template>
+          <template #body="{ data }"><Tag :value="data.status" :severity="statusSeverity(data.status)" /></template>
         </Column>
-
         <Column v-if="auth.isAdmin" header="Review">
           <template #body="{ data }">
-            <div
-              v-if="['SUBMITTED', 'UNDER_REVIEW'].includes(data.status)"
-              class="row-actions"
-            >
-              <Button
-                icon="pi pi-pencil"
-                severity="secondary"
-                size="small"
-                text
-                rounded
-                aria-label="Edit amount and term"
-                @click="openPlan(data)"
-              />
-
-              <Button
-                icon="pi pi-check"
-                severity="success"
-                size="small"
-                text
-                rounded
-                aria-label="Approve"
-                @click="openReview(data, 'APPROVED')"
-              />
-
-              <Button
-                icon="pi pi-times"
-                severity="danger"
-                size="small"
-                text
-                rounded
-                aria-label="Reject"
-                @click="openReview(data, 'REJECTED')"
-              />
+            <div v-if="['SUBMITTED', 'UNDER_REVIEW'].includes(data.status)" class="row-actions">
+              <Button icon="pi pi-pencil" severity="secondary" size="small" text rounded aria-label="Edit amount and term" @click="openPlan(data)" />
+              <Button icon="pi pi-check" severity="success" size="small" text rounded aria-label="Approve" @click="openReview(data, 'APPROVED')" />
+              <Button icon="pi pi-times" severity="danger" size="small" text rounded aria-label="Reject" @click="openReview(data, 'REJECTED')" />
             </div>
-
             <span v-else>—</span>
           </template>
         </Column>
       </DataTable>
     </section>
 
-    <!-- Create -->
-    <Dialog
-      v-model:visible="createVisible"
-      modal
-      header="New loan application"
-      :style="{
-        width: '720px',
-        maxWidth: '95vw',
-      }"
-    >
+    <Dialog v-model:visible="createVisible" modal header="New loan application" :style="{ width: '720px', maxWidth: '95vw' }">
       <form @submit.prevent="submitApplication">
         <div class="form-grid">
           <div v-if="!auth.isCustomer" class="form-field form-field--full">
             <label>Customer *</label>
-
-            <Select
-              v-model="form.customerId"
-              :options="customerOptions"
-              option-label="searchLabel"
-              option-value="_id"
-              filter
-              placeholder="Select customer"
-              required
-            >
-              <template #option="{ option }">
-                {{ fullName(option) }}
-                —
-                {{ option.customerCode }}
-              </template>
-
-              <template #value="{ value }">
-                {{
-                  fullName(customers.find((customer) => customer._id === value))
-                }}
-              </template>
+            <Select v-model="form.customerId" :options="customers" option-value="_id" filter placeholder="Select customer" required>
+              <template #option="{ option }">{{ fullName(option) }} — {{ option.customerCode }}</template>
+              <template #value="{ value }">{{ fullName(customers.find((customer) => customer._id === value)) }}</template>
             </Select>
           </div>
-
           <div class="form-field form-field--full">
             <label>Loan product *</label>
-
-            <Select
-              v-model="form.productId"
-              :options="products"
-              option-label="name"
-              option-value="_id"
-              placeholder="Select product"
-              required
-              @change="applyProductDefaults"
-            />
+            <Select v-model="form.productId" :options="products" option-label="name" option-value="_id" placeholder="Select product" required @change="applyProductDefaults" />
           </div>
-
           <div class="form-field">
-            <label> Requested amount * </label>
-
-            <InputNumber
-              v-model="form.requestedAmount"
-              mode="currency"
-              currency="PHP"
-              locale="en-PH"
-              :min="numberValue(selectedProduct?.minimumAmount)"
-              :max="numberValue(selectedProduct?.maximumAmount) || undefined"
-              required
-            />
+            <label>Requested amount *</label>
+            <InputNumber v-model="form.requestedAmount" mode="currency" currency="PHP" locale="en-PH" :min="numberValue(selectedProduct?.minimumAmount)" :max="numberValue(selectedProduct?.maximumAmount) || undefined" required />
           </div>
-
           <div class="form-field">
-            <label> Requested term * </label>
-
-            <InputNumber
-              v-model="form.requestedTerm"
-              :min="selectedProduct?.minimumTerm || 1"
-              :max="selectedProduct?.maximumTerm || undefined"
-              suffix=" periods"
-              required
-            />
+            <label>Requested term *</label>
+            <InputNumber v-model="form.requestedTerm" :min="selectedProduct?.minimumTerm || 1" :max="selectedProduct?.maximumTerm || undefined" suffix=" periods" required />
           </div>
-
           <div class="form-field">
             <label>Monthly income</label>
-
-            <InputNumber
-              v-model="form.monthlyIncome"
-              mode="currency"
-              currency="PHP"
-              locale="en-PH"
-              :min="0"
-            />
+            <InputNumber v-model="form.monthlyIncome" mode="currency" currency="PHP" locale="en-PH" :min="0" />
           </div>
-
           <div class="form-field">
             <label>Monthly expense</label>
-
-            <InputNumber
-              v-model="form.monthlyExpense"
-              mode="currency"
-              currency="PHP"
-              locale="en-PH"
-              :min="0"
-            />
+            <InputNumber v-model="form.monthlyExpense" mode="currency" currency="PHP" locale="en-PH" :min="0" />
           </div>
-
-          <div class="form-field form-field--full">
-            <label>Purpose *</label>
-
-            <Textarea v-model="form.purpose" rows="3" required />
-          </div>
-
-          <div class="form-field form-field--full">
-            <label> Collateral description </label>
-
-            <Textarea v-model="form.collateralDescription" rows="2" />
-          </div>
+          <div class="form-field form-field--full"><label>Purpose *</label><Textarea v-model="form.purpose" rows="3" required /></div>
+          <div class="form-field form-field--full"><label>Collateral description</label><Textarea v-model="form.collateralDescription" rows="2" /></div>
         </div>
-
         <div class="form-actions">
-          <Button
-            label="Cancel"
-            type="button"
-            severity="secondary"
-            text
-            @click="createVisible = false"
-          />
-
+          <Button label="Cancel" type="button" severity="secondary" text @click="createVisible = false" />
           <Button label="Submit application" type="submit" :loading="saving" />
         </div>
       </form>
     </Dialog>
 
-    <!-- Plan -->
-    <Dialog
-      v-model:visible="planVisible"
-      modal
-      header="Edit application plan"
-      :style="{
-        width: '560px',
-        maxWidth: '95vw',
-      }"
-    >
+    <Dialog v-model:visible="planVisible" modal header="Edit application plan" :style="{ width: '560px', maxWidth: '95vw' }">
       <form @submit.prevent="savePlan">
         <div class="form-grid">
           <div class="form-field">
-            <label> Requested amount * </label>
-
+            <label>Requested amount *</label>
             <InputNumber
               v-model="planForm.requestedAmount"
               mode="currency"
@@ -809,17 +353,14 @@ onMounted(load);
               required
             />
           </div>
-
           <div class="form-field">
-            <label> Requested term * </label>
-
+            <label>Requested term *</label>
             <Select
               v-if="selected?.termsAcceptedAt"
               v-model="planForm.requestedTerm"
               :options="customerTermOptions"
               fluid
             />
-
             <InputNumber
               v-else
               v-model="planForm.requestedTerm"
@@ -829,116 +370,32 @@ onMounted(load);
               required
             />
           </div>
-
           <div class="form-field form-field--full">
-            <label> Reason or customer request note </label>
-
+            <label>Reason or customer request note</label>
             <Textarea v-model="planForm.comment" rows="3" />
           </div>
         </div>
-
         <div class="form-actions">
-          <Button
-            label="Cancel"
-            type="button"
-            severity="secondary"
-            text
-            @click="planVisible = false"
-          />
-
+          <Button label="Cancel" type="button" severity="secondary" text @click="planVisible = false" />
           <Button label="Save new plan" type="submit" :loading="saving" />
         </div>
       </form>
     </Dialog>
 
-    <!-- Review -->
-    <Dialog
-      v-model:visible="reviewVisible"
-      modal
-      :header="`${
-        reviewForm.decision === 'APPROVED' ? 'Approve' : 'Reject'
-      } application`"
-      :style="{
-        width: '560px',
-        maxWidth: '95vw',
-      }"
-    >
+    <Dialog v-model:visible="reviewVisible" modal :header="`${reviewForm.decision === 'APPROVED' ? 'Approve' : 'Reject'} application`" :style="{ width: '560px', maxWidth: '95vw' }">
       <form @submit.prevent="submitReview">
         <div class="form-grid">
-          <div class="form-field form-field--full">
-            <label>Decision</label>
-
-            <Select
-              v-model="reviewForm.decision"
-              :options="['APPROVED', 'REJECTED', 'RETURNED']"
-            />
-          </div>
-
+          <div class="form-field form-field--full"><label>Decision</label><Select v-model="reviewForm.decision" :options="['APPROVED', 'REJECTED', 'RETURNED']" /></div>
           <template v-if="reviewForm.decision === 'APPROVED'">
-            <div class="form-field">
-              <label> Approved amount </label>
-
-              <InputNumber
-                v-model="reviewForm.approvedAmount"
-                mode="currency"
-                currency="PHP"
-                locale="en-PH"
-                :min="0"
-                required
-              />
-            </div>
-
-            <div class="form-field">
-              <label> Approved term </label>
-
-              <InputNumber
-                v-model="reviewForm.approvedTerm"
-                suffix=" periods"
-                :min="1"
-                required
-              />
-            </div>
-
-            <div class="form-field form-field--full">
-              <label> Schedule start date </label>
-
-              <DatePicker
-                v-model="reviewForm.startDate"
-                date-format="M dd, yy"
-                show-icon
-                fluid
-              />
-            </div>
+            <div class="form-field"><label>Approved amount</label><InputNumber v-model="reviewForm.approvedAmount" mode="currency" currency="PHP" locale="en-PH" :min="0" required /></div>
+            <div class="form-field"><label>Approved term</label><InputNumber v-model="reviewForm.approvedTerm" suffix=" periods" :min="1" required /></div>
+            <div class="form-field form-field--full"><label>Schedule start date</label><DatePicker v-model="reviewForm.startDate" date-format="M dd, yy" show-icon fluid /></div>
           </template>
-
-          <div class="form-field form-field--full">
-            <label> Review comment </label>
-
-            <Textarea v-model="reviewForm.comment" rows="3" />
-          </div>
+          <div class="form-field form-field--full"><label>Review comment</label><Textarea v-model="reviewForm.comment" rows="3" /></div>
         </div>
-
         <div class="form-actions">
-          <Button
-            label="Cancel"
-            type="button"
-            severity="secondary"
-            text
-            @click="reviewVisible = false"
-          />
-
-          <Button
-            :label="
-              reviewForm.decision === 'APPROVED'
-                ? 'Approve application'
-                : 'Save decision'
-            "
-            type="submit"
-            :severity="
-              reviewForm.decision === 'REJECTED' ? 'danger' : 'success'
-            "
-            :loading="saving"
-          />
+          <Button label="Cancel" type="button" severity="secondary" text @click="reviewVisible = false" />
+          <Button :label="reviewForm.decision === 'APPROVED' ? 'Approve application' : 'Save decision'" type="submit" :severity="reviewForm.decision === 'REJECTED' ? 'danger' : 'success'" :loading="saving" />
         </div>
       </form>
     </Dialog>

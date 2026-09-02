@@ -31,51 +31,13 @@ const loading = ref(true);
 const detailLoading = ref(false); 
 const withdrawVisible = ref(false);
 const withdrawing = ref(false);
-const verifyingCode = ref(false);
-const dialogWithdrawalId = ref(null);
-const withdrawCode = ref('');
 const withdrawForm = reactive({
-  amount: null
+  amount: null,
+  code: ''
 });
 
 const selectedLoan = computed(() => {
   return loans.value.find((loan) => loan._id === selectedLoanId.value);
-});
-
-const openWithdrawal = computed(() => {
-  return withdrawals.value.find((item) => {
-    return [
-      'PENDING_REVIEW',
-      'WAITING_FOR_CODE',
-      'WAITING_FOR_OTP',
-      'OTP_REQUIRED',
-      'OTP_VERIFIED'
-    ].includes(item.status);
-  });
-});
-
-const dialogWithdrawal = computed(() => {
-  return withdrawals.value.find((item) => item._id === dialogWithdrawalId.value) || null;
-});
-
-const isCodeStep = computed(() => {
-  return [
-    'PENDING_REVIEW',
-    'WAITING_FOR_CODE',
-    'WAITING_FOR_OTP',
-    'OTP_REQUIRED',
-    'OTP_VERIFIED'
-  ].includes(
-    dialogWithdrawal.value?.status
-  );
-});
-
-const codeReady = computed(() => {
-  return ['WAITING_FOR_CODE', 'WAITING_FOR_OTP', 'OTP_REQUIRED'].includes(
-    dialogWithdrawal.value?.status
-  ) && [6, 8].includes(
-    dialogWithdrawal.value?.withdrawCodeLength || dialogWithdrawal.value?.otpLength
-  );
 });
 
 const availableBalance = computed(() => {
@@ -83,13 +45,8 @@ const availableBalance = computed(() => {
 });
 
 const canOpenWithdrawDialog = computed(() => {
-  if (openWithdrawal.value) return true;
   return ['APPROVED', 'ACTIVE'].includes(loanDetail.value?.status) &&
     availableBalance.value > 0;
-});
-
-const withdrawButtonLabel = computed(() => {
-  return openWithdrawal.value ? 'Continue' : 'Withdraw';
 });
 
 function isMoneyOut(transaction) {
@@ -118,6 +75,7 @@ function withdrawalSeverity(status) {
 }
 
 function withdrawalLabel(status) {
+  if (status === 'REFUNDED') return 'REJECTED';
   if (['WAITING_FOR_OTP', 'OTP_REQUIRED'].includes(status)) {
     return 'WAITING FOR CODE';
   }
@@ -185,37 +143,46 @@ async function load() {
 
 function openWithdraw() {
   withdrawForm.amount = null;
-  dialogWithdrawalId.value = openWithdrawal.value?._id || null;
-  withdrawCode.value = '';
+  withdrawForm.code = '';
   withdrawVisible.value = true;
 }
 
 function closeWithdraw() {
   withdrawVisible.value = false;
-  dialogWithdrawalId.value = null;
-  withdrawCode.value = '';
+  withdrawForm.amount = null;
+  withdrawForm.code = '';
 }
 
 async function submitWithdrawal() {
   if (!selectedLoanId.value) return;
+  const code = normalizeWithdrawCode(withdrawForm.code);
+  withdrawForm.code = code;
+
+  if (!/^\d{6}$|^\d{8}$/.test(code)) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Complete code required',
+      detail: 'Enter the complete 6- or 8-digit withdraw code.',
+      life: 3000
+    });
+    return;
+  }
+
   withdrawing.value = true;
 
   try {
-    const { data } = await api.post('/withdrawals', {
+    await api.post('/withdrawals/complete', {
       loanId: selectedLoanId.value,
-      amount: withdrawForm.amount
+      amount: withdrawForm.amount,
+      code
     });
-    dialogWithdrawalId.value = data.item._id;
-    withdrawals.value = [
-      data.item,
-      ...withdrawals.value.filter((item) => item._id !== data.item._id)
-    ];
     toast.add({
       severity: 'success',
-      summary: 'Withdrawal submitted',
-      detail: 'Enter the withdraw code after an administrator provides it.',
-      life: 4000
+      summary: 'Withdrawal successful',
+      detail: 'The amount has been withdrawn from your wallet.',
+      life: 3500
     });
+    closeWithdraw();
     await loadLoanDetail(selectedLoanId.value);
   } catch (error) {
     toast.add({
@@ -224,6 +191,7 @@ async function submitWithdrawal() {
       detail: apiError(error),
       life: 4500
     });
+    await loadLoanDetail(selectedLoanId.value);
   } finally {
     withdrawing.value = false;
   }
@@ -236,46 +204,8 @@ function normalizeWithdrawCode(value) {
     .slice(0, 8);
 }
 
-async function verifyWithdrawCode() {
-  if (!dialogWithdrawal.value) return;
-
-  const code = normalizeWithdrawCode(withdrawCode.value);
-  withdrawCode.value = code;
-
-  if (!/^\d{6}$|^\d{8}$/.test(code)) {
-    toast.add({
-      severity: 'warn',
-      summary: 'Complete code required',
-      detail: 'Enter the complete 6- or 8-digit withdraw code.',
-      life: 3000
-    });
-    return;
-  }
-
-  verifyingCode.value = true;
-
-  try {
-    await api.post(`/withdrawals/${dialogWithdrawal.value._id}/verify-code`, {
-      code
-    });
-    toast.add({
-      severity: 'success',
-      summary: 'Withdrawal successful',
-      detail: 'The amount has been withdrawn from your wallet.',
-      life: 3500
-    });
-    await loadLoanDetail(selectedLoanId.value);
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: 'Withdraw code verification failed',
-      detail: apiError(error),
-      life: 4500
-    });
-    await loadLoanDetail(selectedLoanId.value);
-  } finally {
-    verifyingCode.value = false;
-  }
+function updateWithdrawCode(event) {
+  withdrawForm.code = normalizeWithdrawCode(event.target.value);
 }
 
 watch(selectedLoanId, (id, oldId) => {
@@ -285,24 +215,9 @@ watch(selectedLoanId, (id, oldId) => {
   }
 });
 
-watch(
-  [
-    () => dialogWithdrawal.value?.status,
-    () => dialogWithdrawal.value?.withdrawCodeSetAt
-  ],
-  ([status, generatedAt], [oldStatus, oldGeneratedAt]) => {
-    if (
-      ['WAITING_FOR_CODE', 'WAITING_FOR_OTP', 'OTP_REQUIRED'].includes(status) &&
-      (status !== oldStatus || generatedAt !== oldGeneratedAt)
-    ) {
-      withdrawCode.value = '';
-    }
-  }
-);
-
-watch(withdrawCode, (value) => {
+watch(() => withdrawForm.code, (value) => {
   const normalized = normalizeWithdrawCode(value);
-  if (normalized !== value) withdrawCode.value = normalized;
+  if (normalized !== value) withdrawForm.code = normalized;
 });
 
 useRealtimeRefresh(['loans', 'repayments', 'withdrawals'], load); 
@@ -414,28 +329,19 @@ onMounted(load);
             <div class="min-w-0 flex-1">
               <strong class="block text-sm text-slate-900">Withdraw money</strong>
               <span class="mt-0.5 block text-xs leading-5 text-slate-500">
-                Enter the withdraw code provided by the administrator.
+                Enter the amount and withdraw code provided by the administrator.
               </span>
             </div>
             <Button
-              :label="withdrawButtonLabel"
+              label="Withdraw"
               icon="pi pi-arrow-up-right"
               size="small"
               :disabled="!canOpenWithdrawDialog"
               @click="openWithdraw"
             />
           </div>
-
           <Message
-            v-if="openWithdrawal"
-            class="mt-4"
-            severity="info"
-            :closable="false"
-          >
-            Withdrawal {{ openWithdrawal.withdrawalNumber }} is still in progress. Select Continue to view its current step.
-          </Message>
-          <Message
-            v-else-if="!['APPROVED', 'ACTIVE'].includes(loanDetail.status)"
+            v-if="!['APPROVED', 'ACTIVE'].includes(loanDetail.status)"
             class="mt-4"
             severity="warn"
             :closable="false"
@@ -485,13 +391,13 @@ onMounted(load);
               </p>
 
               <Message
-                v-if="item.status === 'REFUNDED'"
+                v-if="item.rejectedAfterCompletionAt || item.refundedAt || item.status === 'REFUNDED'"
                 class="mt-3"
                 severity="warn"
                 :closable="false"
               >
-                The withdrawn amount was returned to your wallet.
-                {{ item.refundReason || '' }}
+                This withdrawal was rejected and the amount was returned to your wallet.
+                {{ item.rejectionReason || item.refundReason || '' }}
               </Message>
             </article>
           </div>
@@ -586,16 +492,12 @@ onMounted(load);
     <Dialog
       v-model:visible="withdrawVisible"
       modal
-      :header="dialogWithdrawal ? 'Withdrawal progress' : 'Withdraw wallet balance'"
+      header="Withdraw wallet balance"
       :style="{ width: '520px', maxWidth: '95vw' }"
       @hide="closeWithdraw"
     >
-      <form v-if="!dialogWithdrawal" @submit.prevent="submitWithdrawal">
+      <form @submit.prevent="submitWithdrawal">
         <div class="space-y-4">
-          <Message severity="info" :closable="false">
-            Your destination bank name and account number will be taken automatically from this loan application.
-          </Message>
-
           <div class="form-field">
             <label>Withdrawal amount *</label>
             <InputNumber
@@ -610,6 +512,20 @@ onMounted(load);
             />
             <small>Available: {{ currency(wallet.availableBalance) }}</small>
           </div>
+
+          <div class="form-field">
+            <label>Withdraw code *</label>
+            <InputText
+              :model-value="withdrawForm.code"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              maxlength="8"
+              placeholder="Enter 6- or 8-digit code"
+              class="w-full text-center text-2xl font-bold tracking-[0.3em]"
+              required
+              @input="updateWithdrawCode"
+            />
+          </div>
         </div>
 
         <div class="form-actions">
@@ -623,103 +539,6 @@ onMounted(load);
           <Button label="Submit withdrawal" type="submit" :loading="withdrawing" />
         </div>
       </form>
-
-      <template v-else>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="rounded-xl bg-slate-50 p-3">
-            <span class="block text-xs text-slate-500">Request</span>
-            <strong class="mt-1 block text-sm text-slate-900">
-              {{ dialogWithdrawal.withdrawalNumber }}
-            </strong>
-          </div>
-          <div class="rounded-xl bg-slate-50 p-3">
-            <span class="block text-xs text-slate-500">Amount</span>
-            <strong class="mt-1 block text-sm text-slate-900">
-              {{ currency(dialogWithdrawal.amount) }}
-            </strong>
-          </div>
-        </div>
-
-        <div class="mt-3 rounded-xl border border-slate-200 p-3">
-          <span class="block text-xs text-slate-500">Destination from loan application</span>
-          <strong class="mt-1 block text-sm text-slate-900">
-            {{ dialogWithdrawal.requestedBank?.bankName || '—' }}
-          </strong>
-          <span class="mt-1 block break-all text-sm text-slate-600">
-            {{ dialogWithdrawal.requestedBank?.bankAccountNumber || '—' }}
-          </span>
-        </div>
-
-        <form
-          v-if="isCodeStep"
-          class="mt-4"
-          @submit.prevent="verifyWithdrawCode"
-        >
-          <div class="form-field">
-            <label>Withdraw code</label>
-            <InputText
-              v-model="withdrawCode"
-              inputmode="numeric"
-              autocomplete="one-time-code"
-              maxlength="8"
-              placeholder="Enter withdraw code"
-              class="w-full text-center text-2xl font-bold tracking-[0.3em]"
-              :autofocus="codeReady"
-            />
-          </div>
-
-          <div class="form-actions">
-            <Button
-              label="Close"
-              type="button"
-              severity="secondary"
-              text
-              @click="closeWithdraw"
-            />
-            <Button
-              label="Verify code"
-              type="submit"
-              icon="pi pi-check"
-              :loading="verifyingCode"
-            />
-          </div>
-        </form>
-
-        <Message
-          v-else-if="['APPROVED', 'COMPLETED'].includes(dialogWithdrawal.status)"
-          class="mt-4"
-          severity="success"
-          :closable="false"
-        >
-          Withdrawal successful. The amount has been processed and recorded in your transaction history.
-        </Message>
-
-        <Message
-          v-else-if="dialogWithdrawal.status === 'REFUNDED'"
-          class="mt-4"
-          severity="warn"
-          :closable="false"
-        >
-          This withdrawal was refunded and the amount was returned to your wallet.
-          {{ dialogWithdrawal.refundReason || '' }}
-        </Message>
-
-        <Message
-          v-else
-          class="mt-4"
-          :severity="dialogWithdrawal.status === 'REJECTED' ? 'error' : 'warn'"
-          :closable="false"
-        >
-          {{ dialogWithdrawal.rejectionReason || `Withdrawal status: ${withdrawalLabel(dialogWithdrawal.status)}` }}
-        </Message>
-
-        <div
-          v-if="!isCodeStep"
-          class="form-actions"
-        >
-          <Button label="Close" severity="secondary" @click="closeWithdraw" />
-        </div>
-      </template>
     </Dialog>
   </div>
 </template>
