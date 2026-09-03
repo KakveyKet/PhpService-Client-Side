@@ -97,17 +97,13 @@ const processingFee = computed(() => {
   return (amount.value * feePercent) / 100;
 });
 
-const totalInterest = computed(() => {
-  const rate = ratePercent.value / 100;
+const monthlyInterest = computed(
+  () => amount.value * (ratePercent.value / 100),
+);
 
-  if (
-    selectedProduct.value?.rateId?.calculationMethod === "REDUCING_BALANCE"
-  ) {
-    return (amount.value * rate * (months.value + 1)) / 2;
-  }
-
-  return amount.value * rate * months.value;
-});
+const totalInterest = computed(
+  () => monthlyInterest.value * months.value,
+);
 
 const totalPayable = computed(
   () => amount.value + totalInterest.value + processingFee.value,

@@ -20,6 +20,7 @@ import {
 
 const toast = useToast();
 const loans = ref([]);
+const applications = ref([]);
 const selectedLoanId = ref(null);
 const loanDetail = ref(null);
 const transactions = ref([]); 
@@ -38,6 +39,12 @@ const withdrawForm = reactive({
 
 const selectedLoan = computed(() => {
   return loans.value.find((loan) => loan._id === selectedLoanId.value);
+});
+
+const pendingApplication = computed(() => {
+  return applications.value.find((application) =>
+    ['SUBMITTED', 'UNDER_REVIEW'].includes(application.status)
+  ) || null;
 });
 
 const availableBalance = computed(() => {
@@ -115,11 +122,13 @@ async function load() {
   loading.value = true;
 
   try {
-    const { data } = await api.get('/loans', {
-      params: { limit: 100 }
-    });
+    const [loanResponse, applicationResponse] = await Promise.all([
+      api.get('/loans', { params: { limit: 100 } }),
+      api.get('/loan-applications', { params: { limit: 100 } })
+    ]);
 
-    loans.value = data.items;
+    loans.value = loanResponse.data.items;
+    applications.value = applicationResponse.data.items;
 
     const preferred = loans.value.find((loan) => {
       return loan._id === selectedLoanId.value;
@@ -128,7 +137,15 @@ async function load() {
     }) || loans.value[0];
 
     selectedLoanId.value = preferred?._id || null;
-    await loadLoanDetail(selectedLoanId.value);
+
+    if (selectedLoanId.value) {
+      await loadLoanDetail(selectedLoanId.value);
+    } else {
+      loanDetail.value = null;
+      transactions.value = [];
+      withdrawals.value = [];
+      wallet.value = { availableBalance: 0 };
+    }
   } catch (error) {
     toast.add({
       severity: 'error',
@@ -220,7 +237,7 @@ watch(() => withdrawForm.code, (value) => {
   if (normalized !== value) withdrawForm.code = normalized;
 });
 
-useRealtimeRefresh(['loans', 'repayments', 'withdrawals'], load); 
+useRealtimeRefresh(['applications', 'loans', 'repayments', 'withdrawals'], load); 
 onMounted(load);
 </script>
 
@@ -467,6 +484,55 @@ onMounted(load);
         </section>
       </div>
     </template>
+
+    <!-- Loan application waiting for approval -->
+    <div
+      v-else-if="pendingApplication"
+      class="rounded-2xl border border-slate-200 bg-white px-6 py-14 text-center shadow-sm"
+    >
+      <div class="relative mx-auto h-20 w-20">
+        <div
+          class="absolute left-1 top-1 flex h-16 w-14 items-center justify-center rounded-xl bg-violet-50 text-violet-300"
+        >
+          <i class="pi pi-file text-2xl" />
+        </div>
+        <div
+          class="absolute bottom-0 right-0 flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-500"
+        >
+          <i class="pi pi-search text-lg" />
+        </div>
+      </div>
+
+      <strong class="mx-auto mt-5 block max-w-xs text-xl text-slate-900">
+        Your loan application is under review.
+      </strong>
+      <span class="mx-auto mt-3 block max-w-sm text-sm leading-6 text-slate-500">
+        Your application is currently being reviewed. Your wallet balance will
+        appear here after an administrator approves the loan.
+      </span>
+
+      <div class="mx-auto mt-5 grid max-w-sm grid-cols-2 gap-3 text-left">
+        <div class="rounded-xl bg-slate-50 p-3">
+          <span class="block text-xs text-slate-500">Application</span>
+          <strong class="mt-1 block truncate text-sm text-slate-800">
+            {{ pendingApplication.applicationNumber }}
+          </strong>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-3">
+          <span class="block text-xs text-slate-500">Requested amount</span>
+          <strong class="mt-1 block text-sm text-slate-800">
+            {{ currency(pendingApplication.requestedAmount) }}
+          </strong>
+        </div>
+      </div>
+
+      <RouterLink
+        to="/customer/home"
+        class="mx-auto mt-7 inline-flex min-h-11 w-full max-w-sm items-center justify-center rounded-xl bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700"
+      >
+        OK
+      </RouterLink>
+    </div>
 
     <!-- Empty wallet -->
     <div

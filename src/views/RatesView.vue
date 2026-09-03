@@ -22,7 +22,7 @@ const loading = ref(false);
 const saving = ref(false);
 const dialogVisible = ref(false);
 const editingId = ref(null);
-const emptyForm = () => ({ rateCode: '', name: '', ratePercent: 0.7 });
+const emptyForm = () => ({ rateCode: '', name: '', ratePercent: 0.3 });
 const form = reactive(emptyForm());
 
 async function load() {
