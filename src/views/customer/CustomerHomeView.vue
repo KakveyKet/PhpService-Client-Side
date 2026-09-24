@@ -25,8 +25,9 @@ const months = ref(6);
 const agreed = ref(false);
 const loading = ref(true);
 const applying = ref(false);
-const applicationDialogVisible = ref(false);
-const applicationFormLoading = ref(false);
+const applicationDialogVisible = ref(false); 
+const applicationFormLoading = ref(false); 
+const applicationSubmissionKey = ref("");
 const highlightSlider = ref(null);
 const calculatorSection = ref(null);
 const signatureCanvas = ref(null);
@@ -56,13 +57,16 @@ const signaturePreviewUrl = ref("");
 const drawingSignature = ref(false);
 const hasDrawnSignature = ref(false);
 
-const applicationForm = reactive({
-  name: "",
-  address: "",
-  idCardNumber: "",
-  bankName: "",
-  bankAccountNumber: "",
-});
+const applicationForm = reactive({ 
+  name: "", 
+  address: "", 
+  idCardNumber: "", 
+  bankName: "", 
+  bankAccountNumber: "", 
+  loanPurpose: "", 
+  monthlyIncome: null, 
+  occupation: "", 
+}); 
 
 const highlights = [
   {
@@ -90,13 +94,6 @@ const ratePercent = computed(() =>
   numberValue(selectedProduct.value?.rateId?.ratePercent),
 );
 
-const processingFee = computed(() => {
-  const feePercent = numberValue(
-    selectedProduct.value?.processingFeePercent,
-  );
-  return (amount.value * feePercent) / 100;
-});
-
 const monthlyInterest = computed(
   () => amount.value * (ratePercent.value / 100),
 );
@@ -106,7 +103,7 @@ const totalInterest = computed(
 );
 
 const totalPayable = computed(
-  () => amount.value + totalInterest.value + processingFee.value,
+  () => amount.value + totalInterest.value,
 );
 
 const monthlyPayment = computed(() =>
@@ -311,6 +308,14 @@ function drawnSignatureBlob() {
   });
 }
 
+function createSubmissionKey() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 async function load() {
   loading.value = true;
 
@@ -339,6 +344,7 @@ async function load() {
 async function openApplicationForm() {
   if (!canApply.value) return;
 
+  applicationSubmissionKey.value = createSubmissionKey();
   applicationDialogVisible.value = true;
   applicationFormLoading.value = true;
   clearApplicationFiles();
@@ -354,10 +360,13 @@ async function openApplicationForm() {
           .filter(Boolean)
           .join(" "),
       address: formatAddress(customer.address),
-      idCardNumber: customer.nationalId || "",
-      bankName: customer.bankName || "",
-      bankAccountNumber: customer.bankNumber || "",
-    });
+      idCardNumber: customer.nationalId || "", 
+      bankName: customer.bankName || "", 
+      bankAccountNumber: customer.bankNumber || "", 
+      loanPurpose: "", 
+      monthlyIncome: numberValue(customer.monthlyIncome), 
+      occupation: customer.occupation || "", 
+    }); 
 
     savedIdentityImages.frontIdCard = Boolean(customer.frontIdCard?.publicId);
     savedIdentityImages.backIdCard = Boolean(customer.backIdCard?.publicId);
@@ -379,23 +388,39 @@ async function openApplicationForm() {
 function closeApplicationForm() {
   if (applying.value) return;
   applicationDialogVisible.value = false;
+  applicationSubmissionKey.value = "";
   clearApplicationFiles();
 }
 
 async function submitApplication() {
+  // Prevent double-clicks, repeated Enter presses, and duplicate submit events.
+  if (applying.value) return;
+
   const missingField = [
     [applicationForm.name, "Name"],
     [applicationForm.address, "Address"],
-    [applicationForm.idCardNumber, "ID card number"],
-    [applicationForm.bankName, "Bank name"],
-    [applicationForm.bankAccountNumber, "Bank account number"],
-  ].find(([value]) => !String(value || "").trim());
+    [applicationForm.idCardNumber, "ID card number"], 
+    [applicationForm.bankName, "Bank name"], 
+    [applicationForm.bankAccountNumber, "Bank account number"], 
+    [applicationForm.loanPurpose, "Loan purpose"], 
+    [applicationForm.occupation, "Occupation"], 
+  ].find(([value]) => !String(value || "").trim()); 
 
   if (missingField) {
     toast.add({
       severity: "warn",
       summary: "Information required",
       detail: `${missingField[1]} is required.`,
+      life: 3500,
+    });
+    return; 
+  } 
+
+  if (numberValue(applicationForm.monthlyIncome) <= 0) {
+    toast.add({
+      severity: "warn",
+      summary: "Monthly income required",
+      detail: "Enter a monthly income greater than zero.",
       life: 3500,
     });
     return;
@@ -448,13 +473,16 @@ async function submitApplication() {
     if (!signature) throw new Error("Could not create the signature image");
 
     const data = new FormData();
+    if (!applicationSubmissionKey.value) {
+      applicationSubmissionKey.value = createSubmissionKey();
+    }
+    data.append("submissionKey", applicationSubmissionKey.value);
     data.append("productId", selectedProduct.value._id);
     data.append("requestedAmount", String(amount.value));
     data.append("requestedTerm", String(months.value));
-    data.append(
-      "purpose",
-      "Loan application submitted from customer portal",
-    );
+    data.append("purpose", applicationForm.loanPurpose.trim()); 
+    data.append("monthlyIncome", String(applicationForm.monthlyIncome));
+    data.append("occupation", applicationForm.occupation.trim());
     data.append("termsAccepted", "true");
     data.append("applicantName", applicationForm.name.trim());
     data.append("applicantAddress", applicationForm.address.trim());
@@ -488,6 +516,7 @@ async function submitApplication() {
 
     agreed.value = false;
     applicationDialogVisible.value = false;
+    applicationSubmissionKey.value = "";
     clearApplicationFiles();
   } catch (error) {
     toast.add({
@@ -669,12 +698,6 @@ onBeforeUnmount(clearApplicationFiles);
             </div>
             <div class="flex items-center justify-between gap-4">
               <span class="text-xs font-semibold uppercase text-emerald-200">
-                Processing fee
-              </span>
-              <strong>{{ currency(processingFee) }}</strong>
-            </div>
-            <div class="flex items-center justify-between gap-4">
-              <span class="text-xs font-semibold uppercase text-emerald-200">
                 Total term
               </span>
               <strong>{{ months }} months</strong>
@@ -811,9 +834,9 @@ onBeforeUnmount(clearApplicationFiles);
             />
           </div>
 
-          <div class="sm:col-span-2">
-            <label for="applicationBankNumber" class="form-label">
-              Bank account number *
+          <div class="sm:col-span-2"> 
+            <label for="applicationBankNumber" class="form-label"> 
+              Bank account number * 
             </label>
             <InputText
               id="applicationBankNumber"
@@ -821,12 +844,57 @@ onBeforeUnmount(clearApplicationFiles);
               inputmode="numeric"
               autocomplete="off"
               class="w-full"
+              required 
+            /> 
+          </div> 
+
+          <div class="sm:col-span-2">
+            <label for="applicationLoanPurpose" class="form-label">
+              Loan purpose *
+            </label>
+            <Textarea
+              id="applicationLoanPurpose"
+              v-model.trim="applicationForm.loanPurpose"
+              rows="3"
+              maxlength="500"
+              class="w-full"
+              placeholder="Describe why you are applying for this loan"
               required
             />
           </div>
 
           <div>
-            <label for="applicationFrontId" class="form-label">
+            <label for="applicationMonthlyIncome" class="form-label">
+              Monthly income *
+            </label>
+            <InputNumber
+              input-id="applicationMonthlyIncome"
+              v-model="applicationForm.monthlyIncome"
+              mode="currency"
+              currency="PHP"
+              locale="en-PH"
+              :min="1"
+              fluid
+              required
+            />
+          </div>
+
+          <div>
+            <label for="applicationOccupation" class="form-label">
+              Occupation *
+            </label>
+            <InputText
+              id="applicationOccupation"
+              v-model.trim="applicationForm.occupation"
+              maxlength="150"
+              class="w-full"
+              placeholder="Enter your occupation"
+              required
+            />
+          </div>
+
+          <div> 
+            <label for="applicationFrontId" class="form-label"> 
               ID card front *
             </label>
             <input
@@ -1003,6 +1071,7 @@ onBeforeUnmount(clearApplicationFiles);
             type="submit"
             label="Submit application"
             icon="pi pi-send"
+            :disabled="applying"
             :loading="applying"
           />
         </div>
