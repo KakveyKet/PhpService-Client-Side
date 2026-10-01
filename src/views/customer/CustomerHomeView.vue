@@ -25,8 +25,9 @@ const months = ref(6);
 const agreed = ref(false);
 const loading = ref(true);
 const applying = ref(false);
-const applicationDialogVisible = ref(false); 
-const applicationFormLoading = ref(false); 
+const uploadProgress = ref(0);
+const applicationDialogVisible = ref(false);
+const applicationFormLoading = ref(false);
 const applicationSubmissionKey = ref("");
 const highlightSlider = ref(null);
 const calculatorSection = ref(null);
@@ -57,16 +58,16 @@ const signaturePreviewUrl = ref("");
 const drawingSignature = ref(false);
 const hasDrawnSignature = ref(false);
 
-const applicationForm = reactive({ 
-  name: "", 
-  address: "", 
-  idCardNumber: "", 
-  bankName: "", 
-  bankAccountNumber: "", 
-  loanPurpose: "", 
-  monthlyIncome: null, 
-  occupation: "", 
-}); 
+const applicationForm = reactive({
+  name: "",
+  address: "",
+  idCardNumber: "",
+  bankName: "",
+  bankAccountNumber: "",
+  loanPurpose: "",
+  monthlyIncome: null,
+  occupation: "",
+});
 
 const highlights = [
   {
@@ -88,6 +89,7 @@ const highlights = [
 
 const monthOptions = [6, 12, 24, 36, 48];
 const identityFields = ["frontIdCard", "backIdCard", "selfieWithId"];
+const loanApplicationUploadTimeout = 180_000;
 const selectedProduct = computed(() => products.value[0] || null);
 
 const ratePercent = computed(() =>
@@ -98,13 +100,9 @@ const monthlyInterest = computed(
   () => amount.value * (ratePercent.value / 100),
 );
 
-const totalInterest = computed(
-  () => monthlyInterest.value * months.value,
-);
+const totalInterest = computed(() => monthlyInterest.value * months.value);
 
-const totalPayable = computed(
-  () => amount.value + totalInterest.value,
-);
+const totalPayable = computed(() => amount.value + totalInterest.value);
 
 const monthlyPayment = computed(() =>
   months.value ? totalPayable.value / months.value : 0,
@@ -360,13 +358,13 @@ async function openApplicationForm() {
           .filter(Boolean)
           .join(" "),
       address: formatAddress(customer.address),
-      idCardNumber: customer.nationalId || "", 
-      bankName: customer.bankName || "", 
-      bankAccountNumber: customer.bankNumber || "", 
-      loanPurpose: "", 
-      monthlyIncome: numberValue(customer.monthlyIncome), 
-      occupation: customer.occupation || "", 
-    }); 
+      idCardNumber: customer.nationalId || "",
+      bankName: customer.bankName || "",
+      bankAccountNumber: customer.bankNumber || "",
+      loanPurpose: "",
+      monthlyIncome: numberValue(customer.monthlyIncome),
+      occupation: customer.occupation || "",
+    });
 
     savedIdentityImages.frontIdCard = Boolean(customer.frontIdCard?.publicId);
     savedIdentityImages.backIdCard = Boolean(customer.backIdCard?.publicId);
@@ -399,12 +397,12 @@ async function submitApplication() {
   const missingField = [
     [applicationForm.name, "Name"],
     [applicationForm.address, "Address"],
-    [applicationForm.idCardNumber, "ID card number"], 
-    [applicationForm.bankName, "Bank name"], 
-    [applicationForm.bankAccountNumber, "Bank account number"], 
-    [applicationForm.loanPurpose, "Loan purpose"], 
-    [applicationForm.occupation, "Occupation"], 
-  ].find(([value]) => !String(value || "").trim()); 
+    [applicationForm.idCardNumber, "ID card number"],
+    [applicationForm.bankName, "Bank name"],
+    [applicationForm.bankAccountNumber, "Bank account number"],
+    [applicationForm.loanPurpose, "Loan purpose"],
+    [applicationForm.occupation, "Occupation"],
+  ].find(([value]) => !String(value || "").trim());
 
   if (missingField) {
     toast.add({
@@ -413,8 +411,8 @@ async function submitApplication() {
       detail: `${missingField[1]} is required.`,
       life: 3500,
     });
-    return; 
-  } 
+    return;
+  }
 
   if (numberValue(applicationForm.monthlyIncome) <= 0) {
     toast.add({
@@ -463,6 +461,7 @@ async function submitApplication() {
   }
 
   applying.value = true;
+  uploadProgress.value = 0;
 
   try {
     const signature =
@@ -480,7 +479,7 @@ async function submitApplication() {
     data.append("productId", selectedProduct.value._id);
     data.append("requestedAmount", String(amount.value));
     data.append("requestedTerm", String(months.value));
-    data.append("purpose", applicationForm.loanPurpose.trim()); 
+    data.append("purpose", applicationForm.loanPurpose.trim());
     data.append("monthlyIncome", String(applicationForm.monthlyIncome));
     data.append("occupation", applicationForm.occupation.trim());
     data.append("termsAccepted", "true");
@@ -488,10 +487,7 @@ async function submitApplication() {
     data.append("applicantAddress", applicationForm.address.trim());
     data.append("idCardNumber", applicationForm.idCardNumber.trim());
     data.append("bankName", applicationForm.bankName.trim());
-    data.append(
-      "bankAccountNumber",
-      applicationForm.bankAccountNumber.trim(),
-    );
+    data.append("bankAccountNumber", applicationForm.bankAccountNumber.trim());
 
     for (const field of identityFields) {
       if (identityFiles[field]) data.append(field, identityFiles[field]);
@@ -505,7 +501,18 @@ async function submitApplication() {
         : signatureFile.value.name,
     );
 
-    await api.post("/loan-applications", data);
+    await api.post("/loan-applications", data, {
+      // Multipart uploads include up to four images and can take longer than
+      // normal JSON API calls on a mobile connection.
+      timeout: loanApplicationUploadTimeout,
+      onUploadProgress: (event) => {
+        if (!event.total) return;
+        uploadProgress.value = Math.min(
+          100,
+          Math.round((event.loaded / event.total) * 100),
+        );
+      },
+    });
 
     toast.add({
       severity: "success",
@@ -527,6 +534,7 @@ async function submitApplication() {
     });
   } finally {
     applying.value = false;
+    uploadProgress.value = 0;
   }
 }
 
@@ -623,8 +631,9 @@ onBeforeUnmount(clearApplicationFiles);
             fluid
           />
           <p class="mt-2 text-[11px] font-medium uppercase text-slate-400">
-            Enter amount between {{ currency(selectedProduct.minimumAmount) }}
-            and {{ currency(selectedProduct.maximumAmount) }}
+            Enter amount between
+            {{ currency(selectedProduct.minimumAmount) }} and
+            {{ currency(selectedProduct.maximumAmount) }}
           </p>
         </div>
 
@@ -834,9 +843,9 @@ onBeforeUnmount(clearApplicationFiles);
             />
           </div>
 
-          <div class="sm:col-span-2"> 
-            <label for="applicationBankNumber" class="form-label"> 
-              Bank account number * 
+          <div class="sm:col-span-2">
+            <label for="applicationBankNumber" class="form-label">
+              Bank account number *
             </label>
             <InputText
               id="applicationBankNumber"
@@ -844,9 +853,9 @@ onBeforeUnmount(clearApplicationFiles);
               inputmode="numeric"
               autocomplete="off"
               class="w-full"
-              required 
-            /> 
-          </div> 
+              required
+            />
+          </div>
 
           <div class="sm:col-span-2">
             <label for="applicationLoanPurpose" class="form-label">
@@ -893,8 +902,8 @@ onBeforeUnmount(clearApplicationFiles);
             />
           </div>
 
-          <div> 
-            <label for="applicationFrontId" class="form-label"> 
+          <div>
+            <label for="applicationFrontId" class="form-label">
               ID card front *
             </label>
             <input
@@ -905,7 +914,9 @@ onBeforeUnmount(clearApplicationFiles);
               @change="selectIdentityImage($event, 'frontIdCard')"
             />
             <span
-              v-if="savedIdentityImages.frontIdCard && !identityFiles.frontIdCard"
+              v-if="
+                savedIdentityImages.frontIdCard && !identityFiles.frontIdCard
+              "
               class="saved-file"
             >
               <i class="pi pi-check-circle" /> Saved front ID will be used
@@ -955,7 +966,9 @@ onBeforeUnmount(clearApplicationFiles);
               @change="selectIdentityImage($event, 'selfieWithId')"
             />
             <span
-              v-if="savedIdentityImages.selfieWithId && !identityFiles.selfieWithId"
+              v-if="
+                savedIdentityImages.selfieWithId && !identityFiles.selfieWithId
+              "
               class="saved-file"
             >
               <i class="pi pi-check-circle" /> Saved selfie will be used
@@ -1069,7 +1082,11 @@ onBeforeUnmount(clearApplicationFiles);
           />
           <Button
             type="submit"
-            label="Submit application"
+            :label="
+              applying && uploadProgress
+                ? `Uploading ${uploadProgress}%`
+                : 'Submit application'
+            "
             icon="pi pi-send"
             :disabled="applying"
             :loading="applying"
