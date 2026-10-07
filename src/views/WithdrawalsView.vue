@@ -381,7 +381,12 @@ function confirmForceDelete(withdrawal) {
   });
 }
 
-useRealtimeRefresh(['withdrawals', 'withdrawal-codes', 'customers'], load);
+useRealtimeRefresh([
+  'withdrawals',
+  'withdrawal-codes',
+  'customers',
+  'customer-wallets'
+], load);
 onMounted(load);
 </script>
 
@@ -462,7 +467,11 @@ onMounted(load);
           <template #body="{ data }">
             <strong>{{ data.withdrawal?.withdrawalNumber || '—' }}</strong>
             <small v-if="data.withdrawal" class="table-subtext">
-              {{ data.withdrawal.loanId?.loanNumber || '—' }}
+              {{
+                data.withdrawal.sourceType !== 'LOAN'
+                  ? 'Combined balance'
+                  : data.withdrawal.loanId?.loanNumber || '—'
+              }}
             </small>
           </template>
         </Column>
@@ -569,6 +578,16 @@ onMounted(load);
             <span>Field</span><span>Information</span>
           </div>
           <div class="detail-row"><strong>Withdrawal</strong><span>{{ selectedRow.withdrawal?.withdrawalNumber || 'No withdrawal yet' }}</span></div>
+          <div class="detail-row">
+            <strong>Source</strong>
+            <span>
+              {{
+                selectedRow.withdrawal?.sourceType !== 'LOAN'
+                  ? 'Combined available balance'
+                  : selectedRow.withdrawal?.loanId?.loanNumber || 'Loan balance'
+              }}
+            </span>
+          </div>
           <div class="detail-row"><strong>Amount</strong><span>{{ selectedRow.withdrawal ? currency(selectedRow.withdrawal.amount) : '—' }}</span></div>
           <div class="detail-row"><strong>Bank name</strong><span class="break-words">{{ selectedRow.withdrawal?.requestedBank?.bankName || selectedRow.customer.bankName || '—' }}</span></div>
           <div class="detail-row"><strong>Bank account</strong><span class="break-all">{{ selectedRow.withdrawal?.requestedBank?.bankAccountNumber || selectedRow.customer.bankNumber || '—' }}</span></div>

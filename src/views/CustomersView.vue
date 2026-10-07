@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useToast } from "primevue/usetoast";
 import Button from "primevue/button";
 import Column from "primevue/column";
@@ -10,14 +10,15 @@ import InputText from "primevue/inputtext";
 import Password from "primevue/password";
 import Select from "primevue/select";
 import Tag from "primevue/tag";
+import Textarea from "primevue/textarea";
 import PageHeader from "../components/PageHeader.vue";
 import api from "../services/api.js";
 import { useAuthStore } from "../stores/auth.js";
 import { useRealtimeRefresh } from "../composables/useRealtimeRefresh.js";
-import { creditLevelDetails } from "../utils/credit.js";
 import {
   apiError,
   currency,
+  dateTime,
   statusSeverity,
 } from "../utils/formatters.js";
 
@@ -31,15 +32,24 @@ const search = ref("");
 const dialogVisible = ref(false);
 const deleteDialogVisible = ref(false);
 const resetPasswordDialogVisible = ref(false);
+const depositDialogVisible = ref(false);
+const creditDialogVisible = ref(false);
 
 const saving = ref(false);
 const deleting = ref(false);
 const resettingPassword = ref(false);
 const loadingIdentityImages = ref(false);
+const loadingDepositWallet = ref(false);
+const savingDeposit = ref(false);
+const savingCredit = ref(false);
 
 const editingId = ref(null);
 const customerToDelete = ref(null);
 const customerForPasswordReset = ref(null);
+const customerForDeposit = ref(null);
+const customerForCredit = ref(null);
+const depositWallet = ref({ availableBalance: 0 });
+const depositTransactions = ref([]);
 const identityFiles = reactive({
   frontIdCard: null,
   backIdCard: null,
@@ -67,7 +77,6 @@ const emptyForm = () => ({
   dateOfBirth: null,
   occupation: "",
   monthlyIncome: 0,
-  creditScore: 0,
   status: "ACTIVE",
   identityVerificationStatus: "NOT_SUBMITTED",
   identityVerificationNote: "",
@@ -87,6 +96,51 @@ const emptyPasswordForm = () => ({
 
 const form = reactive(emptyForm());
 const passwordForm = reactive(emptyPasswordForm());
+const depositForm = reactive({
+  operation: "ADD",
+  amount: null,
+  reference: "",
+  reason: "",
+  requestKey: "",
+});
+const creditForm = reactive({
+  operation: "ADD",
+  points: null,
+  reason: "",
+});
+const balanceOperationOptions = [
+  { label: "Add money", value: "ADD" },
+  { label: "Subtract money", value: "SUBTRACT" },
+];
+const creditOperationOptions = [
+  { label: "Add credit points", value: "ADD" },
+  { label: "Subtract credit points", value: "SUBTRACT" },
+];
+
+const currentCreditScore = computed(() => {
+  return Number(customerForCredit.value?.creditScore || 0);
+});
+
+const creditScoreAfterAdjustment = computed(() => {
+  const points = Number(creditForm.points || 0);
+  const validPoints = Number.isFinite(points) ? points : 0;
+  return creditForm.operation === "ADD"
+    ? currentCreditScore.value + validPoints
+    : currentCreditScore.value - validPoints;
+});
+
+const balanceAfterAdjustment = computed(() => {
+  const current = Number(depositWallet.value?.availableBalance || 0);
+  const amount = Number(depositForm.amount || 0);
+  return depositForm.operation === "ADD"
+    ? current + amount
+    : current - amount;
+});
+
+function newRequestKey() {
+  return globalThis.crypto?.randomUUID?.() ||
+    `wallet-adjustment-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function customerUserId(customer) {
   if (!customer?.userId) return null;
@@ -240,7 +294,6 @@ async function openEdit(customer) {
     monthlyIncome: Number(
       customer.monthlyIncome?.$numberDecimal || customer.monthlyIncome || 0,
     ),
-    creditScore: Number(customer.creditScore || 0),
     status: customer.status || "ACTIVE",
     identityVerificationStatus:
       customer.identityVerificationStatus || "NOT_SUBMITTED",
@@ -442,7 +495,215 @@ async function resetCustomerPassword() {
   }
 }
 
-useRealtimeRefresh(["customers"], load);
+async function openCustomerDeposit(customer) {
+  customerForDeposit.value = customer;
+  Object.assign(depositForm, {
+    operation: "ADD",
+    amount: null,
+    reference: "",
+    reason: "",
+    requestKey: newRequestKey(),
+  });
+  depositWallet.value = { availableBalance: 0 };
+  depositTransactions.value = [];
+  depositDialogVisible.value = true;
+  loadingDepositWallet.value = true;
+
+  try {
+    const { data } = await api.get(`/customers/${customer._id}/wallet`, {
+      params: { limit: 10 },
+    });
+    depositWallet.value = data.wallet || { availableBalance: 0 };
+    depositTransactions.value = data.transactions || [];
+  } catch (error) {
+    toast.add({
+      severity: "error",
+      summary: "Cannot load customer balance",
+      detail: apiError(error),
+      life: 4000,
+    });
+  } finally {
+    loadingDepositWallet.value = false;
+  }
+}
+
+function closeDepositDialog() {
+  if (savingDeposit.value) return;
+  depositDialogVisible.value = false;
+  customerForDeposit.value = null;
+  depositWallet.value = { availableBalance: 0 };
+  depositTransactions.value = [];
+  Object.assign(depositForm, {
+    operation: "ADD",
+    amount: null,
+    reference: "",
+    reason: "",
+    requestKey: "",
+  });
+}
+
+async function adjustCustomerBalance() {
+  if (!customerForDeposit.value?._id) return;
+
+  const amount = Number(depositForm.amount);
+  const operation = depositForm.operation === "SUBTRACT" ? "SUBTRACT" : "ADD";
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    toast.add({
+      severity: "warn",
+      summary: "Valid amount required",
+      detail: "Enter a money amount greater than zero.",
+      life: 3000,
+    });
+    return;
+  }
+
+  if (
+    operation === "SUBTRACT" &&
+    amount > Number(depositWallet.value?.availableBalance || 0)
+  ) {
+    toast.add({
+      severity: "warn",
+      summary: "Insufficient balance",
+      detail: "The subtraction cannot make the customer balance go below zero.",
+      life: 3500,
+    });
+    return;
+  }
+
+  savingDeposit.value = true;
+
+  try {
+    const { data } = await api.post(
+      `/customers/${customerForDeposit.value._id}/wallet-adjustments`,
+      {
+        operation,
+        amount,
+        reference: String(depositForm.reference || "").trim(),
+        reason: String(depositForm.reason || "").trim(),
+        requestKey: depositForm.requestKey || newRequestKey(),
+      },
+    );
+
+    depositWallet.value = data.wallet || depositWallet.value;
+    toast.add({
+      severity: "success",
+      summary: data.duplicate
+        ? "Adjustment already recorded"
+        : "Balance adjusted",
+      detail: `${currency(amount)} was ${
+        operation === "ADD" ? "added" : "subtracted"
+      }. New balance: ${currency(data.wallet?.availableBalance)}.`,
+      life: 3500,
+    });
+    depositDialogVisible.value = false;
+    customerForDeposit.value = null;
+    await load();
+  } catch (error) {
+    toast.add({
+      severity: "error",
+      summary: "Cannot adjust balance",
+      detail: apiError(error),
+      life: 4500,
+    });
+  } finally {
+    savingDeposit.value = false;
+  }
+}
+
+function openCreditAdjustment(customer) {
+  customerForCredit.value = customer;
+  Object.assign(creditForm, {
+    operation: "ADD",
+    points: null,
+    reason: "",
+  });
+  creditDialogVisible.value = true;
+}
+
+function closeCreditDialog() {
+  if (savingCredit.value) return;
+  creditDialogVisible.value = false;
+  customerForCredit.value = null;
+  Object.assign(creditForm, {
+    operation: "ADD",
+    points: null,
+    reason: "",
+  });
+}
+
+async function adjustCustomerCredit() {
+  if (!customerForCredit.value?._id) return;
+
+  const points = Number(creditForm.points);
+  const operation = creditForm.operation === "SUBTRACT" ? "SUBTRACT" : "ADD";
+
+  if (!Number.isInteger(points) || points <= 0) {
+    toast.add({
+      severity: "warn",
+      summary: "Valid points required",
+      detail: "Enter whole-number credit points greater than zero.",
+      life: 3000,
+    });
+    return;
+  }
+
+  if (operation === "SUBTRACT" && points > currentCreditScore.value) {
+    toast.add({
+      severity: "warn",
+      summary: "Insufficient credit",
+      detail: "The subtraction cannot make the customer credit go below zero.",
+      life: 3500,
+    });
+    return;
+  }
+
+  savingCredit.value = true;
+
+  try {
+    const { data } = await api.patch(
+      `/customers/${customerForCredit.value._id}/credit`,
+      {
+        points,
+        operation,
+        reason: String(creditForm.reason || "").trim(),
+      },
+    );
+
+    const newCreditScore = Number(
+      data.newCreditScore ?? creditScoreAfterAdjustment.value,
+    );
+
+    toast.add({
+      severity: "success",
+      summary: "Credit score adjusted",
+      detail: `${points} points were ${
+        operation === "ADD" ? "added" : "subtracted"
+      }. New credit: ${newCreditScore}.`,
+      life: 3500,
+    });
+
+    creditDialogVisible.value = false;
+    customerForCredit.value = null;
+    Object.assign(creditForm, {
+      operation: "ADD",
+      points: null,
+      reason: "",
+    });
+    await load();
+  } catch (error) {
+    toast.add({
+      severity: "error",
+      summary: "Cannot adjust customer credit",
+      detail: apiError(error),
+      life: 4500,
+    });
+  } finally {
+    savingCredit.value = false;
+  }
+}
+
+useRealtimeRefresh(["customers", "customer-wallets"], load);
 onMounted(load);
 </script>
 
@@ -511,14 +772,7 @@ onMounted(load);
 
         <Column header="Credit">
           <template #body="{ data }">
-            <strong class="block text-sm text-slate-900">
-              {{ creditLevelDetails(data.creditScore).score }}
-            </strong>
-            <Tag
-              class="mt-1"
-              :value="creditLevelDetails(data.creditScore).label"
-              :severity="creditLevelDetails(data.creditScore).severity"
-            />
+            <strong>{{ Number(data.creditScore || 0) }}</strong>
           </template>
         </Column>
 
@@ -546,9 +800,31 @@ onMounted(load);
           </template>
         </Column>
 
-        <Column header="">
+        <Column header="Actions">
           <template #body="{ data }">
-            <div class="flex justify-end gap-1">
+            <div class="flex flex-wrap justify-end gap-1">
+              <Button
+                v-if="auth.isAdmin"
+                label="Adjust credit"
+                icon="pi pi-star"
+                severity="warn"
+                size="small"
+                outlined
+                aria-label="Adjust customer credit score"
+                @click="openCreditAdjustment(data)"
+              />
+
+              <Button
+                v-if="auth.isAdmin"
+                label="Adjust money"
+                icon="pi pi-wallet"
+                severity="success"
+                size="small"
+                outlined
+                aria-label="Adjust customer available balance"
+                @click="openCustomerDeposit(data)"
+              />
+
               <Button
                 v-if="auth.isAdmin"
                 icon="pi pi-pencil"
@@ -689,21 +965,6 @@ onMounted(load);
               locale="en-PH"
               :min="0"
             />
-          </div>
-
-          <div v-if="editingId" class="form-field">
-            <label for="customerCreditScore">Customer credit score</label>
-            <InputNumber
-              input-id="customerCreditScore"
-              v-model="form.creditScore"
-              :min="0"
-              :max="10000"
-              :use-grouping="false"
-              show-buttons
-            />
-            <small class="text-slate-500">
-              Current level: {{ creditLevelDetails(form.creditScore).label }}
-            </small>
           </div>
 
           <div class="form-field">
@@ -855,6 +1116,289 @@ onMounted(load);
             @click="closeCustomerDialog"
           />
           <Button type="submit" label="Save customer" :loading="saving" />
+        </div>
+      </form>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="creditDialogVisible"
+      modal
+      header="Adjust customer credit score"
+      :style="{ width: '520px', maxWidth: '95vw' }"
+      :closable="!savingCredit"
+      :close-on-escape="!savingCredit"
+      @hide="closeCreditDialog"
+    >
+      <form @submit.prevent="adjustCustomerCredit">
+        <div class="mb-5 flex items-start gap-3">
+          <div
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600"
+          >
+            <i class="pi pi-star-fill" />
+          </div>
+
+          <div>
+            <span class="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Customer
+            </span>
+            <strong class="mt-1 block text-slate-900">
+              {{ customerForCredit ? customerName(customerForCredit) : "Customer" }}
+            </strong>
+            <span class="mt-0.5 block text-xs text-slate-500">
+              {{ customerForCredit?.customerCode || "—" }}
+            </span>
+          </div>
+        </div>
+
+        <div class="mb-5 grid grid-cols-2 gap-3">
+          <div class="rounded-xl bg-slate-50 p-4">
+            <span class="block text-xs text-slate-500">Current credit</span>
+            <strong class="mt-1 block text-2xl text-slate-900">
+              {{ currentCreditScore }}
+            </strong>
+          </div>
+          <div
+            class="rounded-xl p-4"
+            :class="creditForm.operation === 'ADD' ? 'bg-emerald-50' : 'bg-red-50'"
+          >
+            <span
+              class="block text-xs"
+              :class="creditForm.operation === 'ADD' ? 'text-emerald-700' : 'text-red-700'"
+            >
+              Credit after adjustment
+            </span>
+            <strong
+              class="mt-1 block text-2xl"
+              :class="creditForm.operation === 'ADD' ? 'text-emerald-800' : 'text-red-700'"
+            >
+              {{ creditScoreAfterAdjustment }}
+            </strong>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div class="form-field">
+            <label for="creditAdjustmentOperation">Operation *</label>
+            <Select
+              input-id="creditAdjustmentOperation"
+              v-model="creditForm.operation"
+              :options="creditOperationOptions"
+              option-label="label"
+              option-value="value"
+              fluid
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="additionalCreditPoints">Credit points *</label>
+            <InputNumber
+              input-id="additionalCreditPoints"
+              v-model="creditForm.points"
+              :min="1"
+              :use-grouping="false"
+              fluid
+              :max="creditForm.operation === 'SUBTRACT' ? currentCreditScore : undefined"
+              placeholder="Enter points"
+              required
+            />
+            <small class="text-slate-500">
+              Credit score cannot go below zero.
+            </small>
+          </div>
+
+          <div class="form-field">
+            <label for="creditAdjustmentReason">Description (optional)</label>
+            <Textarea
+              id="creditAdjustmentReason"
+              v-model.trim="creditForm.reason"
+              rows="3"
+              maxlength="500"
+              placeholder="Optional note about this credit adjustment"
+            />
+          </div>
+        </div>
+
+        <p class="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+          The automatic 500 points are granted only for the customer's first
+          approved loan. Admins can add or subtract points here to correct a
+          mistake or apply an approved credit change. Every change is audited.
+        </p>
+
+        <div class="mt-6 flex justify-end gap-2">
+          <Button
+            type="button"
+            label="Cancel"
+            severity="secondary"
+            text
+            :disabled="savingCredit"
+            @click="closeCreditDialog"
+          />
+          <Button
+            type="button"
+            :label="creditForm.operation === 'ADD' ? 'Add credit points' : 'Subtract credit points'"
+            :icon="creditForm.operation === 'ADD' ? 'pi pi-plus-circle' : 'pi pi-minus-circle'"
+            :severity="creditForm.operation === 'ADD' ? 'success' : 'danger'"
+            :loading="savingCredit"
+            @click="adjustCustomerCredit"
+          />
+        </div>
+      </form>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="depositDialogVisible"
+      modal
+      header="Adjust customer money balance"
+      :style="{ width: '600px', maxWidth: '95vw' }"
+      :closable="!savingDeposit"
+      :close-on-escape="!savingDeposit"
+      @hide="closeDepositDialog"
+    >
+      <form @submit.prevent="adjustCustomerBalance">
+        <div class="mb-5 rounded-2xl bg-emerald-600 p-4 text-white">
+          <span class="block text-xs font-semibold uppercase tracking-wide text-emerald-100">
+            Customer available balance
+          </span>
+          <strong class="mt-1 block text-2xl">
+            {{
+              loadingDepositWallet
+                ? "Loading..."
+                : currency(depositWallet.availableBalance)
+            }}
+          </strong>
+          <span class="mt-1 block text-sm text-emerald-100">
+            {{ customerForDeposit ? customerName(customerForDeposit) : "Customer" }}
+          </span>
+        </div>
+
+        <div class="mb-5 grid grid-cols-2 gap-3">
+          <div class="rounded-xl bg-slate-50 p-4">
+            <span class="block text-xs text-slate-500">Current balance</span>
+            <strong class="mt-1 block text-lg text-slate-900">
+              {{ currency(depositWallet.availableBalance) }}
+            </strong>
+          </div>
+          <div
+            class="rounded-xl p-4"
+            :class="depositForm.operation === 'ADD' ? 'bg-emerald-50' : 'bg-red-50'"
+          >
+            <span
+              class="block text-xs"
+              :class="depositForm.operation === 'ADD' ? 'text-emerald-700' : 'text-red-700'"
+            >
+              Balance after adjustment
+            </span>
+            <strong
+              class="mt-1 block text-lg"
+              :class="depositForm.operation === 'ADD' ? 'text-emerald-800' : 'text-red-700'"
+            >
+              {{ currency(balanceAfterAdjustment) }}
+            </strong>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div class="form-field">
+            <label for="balanceAdjustmentOperation">Operation *</label>
+            <Select
+              input-id="balanceAdjustmentOperation"
+              v-model="depositForm.operation"
+              :options="balanceOperationOptions"
+              option-label="label"
+              option-value="value"
+              fluid
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="customerDepositAmount">Money amount *</label>
+            <InputNumber
+              input-id="customerDepositAmount"
+              v-model="depositForm.amount"
+              mode="currency"
+              currency="PHP"
+              locale="en-PH"
+              :min="1"
+              :max="depositForm.operation === 'SUBTRACT' ? Number(depositWallet.availableBalance || 0) : undefined"
+              fluid
+              required
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="customerDepositReference">Reference</label>
+            <InputText
+              id="customerDepositReference"
+              v-model.trim="depositForm.reference"
+              maxlength="120"
+              placeholder="Bank receipt or transfer reference"
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="customerDepositNote">Description (optional)</label>
+            <Textarea
+              id="customerDepositNote"
+              v-model.trim="depositForm.reason"
+              rows="3"
+              maxlength="500"
+              placeholder="Optional note about this money adjustment"
+            />
+          </div>
+        </div>
+
+        <div v-if="depositTransactions.length" class="mt-5">
+          <h3 class="mb-2 text-sm font-bold text-slate-800">Recent wallet activity</h3>
+          <div class="max-h-48 overflow-y-auto rounded-xl border border-slate-200">
+            <div
+              v-for="transaction in depositTransactions"
+              :key="transaction._id"
+              class="flex items-start justify-between gap-3 border-b border-slate-100 p-3 last:border-b-0"
+            >
+              <div class="min-w-0">
+                <strong class="block text-sm text-slate-800">
+                  {{ transaction.transactionType.replaceAll("_", " ") }}
+                </strong>
+                <small class="block truncate text-slate-500">
+                  {{ transaction.description || transaction.externalReference || "Customer wallet activity" }}
+                </small>
+                <small class="block text-slate-400">
+                  {{ dateTime(transaction.transactionDate) }}
+                </small>
+              </div>
+              <strong
+                class="shrink-0 text-sm"
+                :class="transaction.direction === 'CREDIT' ? 'text-emerald-700' : 'text-red-600'"
+              >
+                {{ transaction.direction === "CREDIT" ? "+" : "−" }}{{ currency(transaction.amount) }}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        <p class="mt-4 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+          Add increases the customer's combined balance. Subtract corrects or
+          removes money, but cannot reduce the balance below zero. Every
+          adjustment is recorded with the administrator. The description is optional.
+        </p>
+
+        <div class="mt-6 flex justify-end gap-2">
+          <Button
+            type="button"
+            label="Cancel"
+            severity="secondary"
+            text
+            :disabled="savingDeposit"
+            @click="closeDepositDialog"
+          />
+          <Button
+            type="button"
+            :label="depositForm.operation === 'ADD' ? 'Add money' : 'Subtract money'"
+            :icon="depositForm.operation === 'ADD' ? 'pi pi-plus-circle' : 'pi pi-minus-circle'"
+            :severity="depositForm.operation === 'ADD' ? 'success' : 'danger'"
+            :loading="savingDeposit"
+            @click="adjustCustomerBalance"
+          />
         </div>
       </form>
     </Dialog>
