@@ -485,10 +485,6 @@ onMounted(load);
                     {{ entry.item.withdrawalNumber }} ·
                     {{ dateTime(entry.item.createdAt) }}
                   </span>
-                  <span class="mt-1 block truncate text-xs text-slate-500">
-                    {{ entry.item.requestedBank?.bankName || "—" }} ·
-                    {{ entry.item.requestedBank?.bankAccountNumber || "—" }}
-                  </span>
                 </div>
                 <Tag
                   :value="withdrawalLabel(entry.item.status)"
